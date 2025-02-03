@@ -1,0 +1,12 @@
+[package]
+name = "toors"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+toors_derive = { path = "./toors_derive" }
+
+[workspace]
+members = [
+    "toors_derive",
+]
