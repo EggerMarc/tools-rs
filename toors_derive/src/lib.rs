@@ -2,6 +2,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse_macro_input, FnArg, ImplItem, ItemImpl, Pat, ReturnType, Type};
+
 #[proc_macro_attribute]
 pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut impl_block = parse_macro_input!(item as ItemImpl);
@@ -72,7 +73,8 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #impl_block
 
-        impl #struct_name {
+        impl toors::Tool for #struct_name {
+
             fn description() -> &'static str {
                 #description
             }

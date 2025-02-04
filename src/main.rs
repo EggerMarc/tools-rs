@@ -1,34 +1,67 @@
+use toors::ToolCollection;
 use toors_derive::tool;
 
-pub struct Add;
+#[derive(Default)]
+struct Multiply;
 
 #[tool]
-/// Adds two numbers
-/// Can handle negative values
-/// Arbitrarily long descriptions
-/// Woohoooo!
-impl Add {
-    pub fn call(a: i32, b: i32) -> i32 {
+/// Multiply two values 
+impl Multiply {
+    fn call(a: i32, b: i32) -> i32 {
         a + b
     }
 }
 
-pub struct Order {
-    client_id: u32
+#[derive(Default)]
+struct Scream;
+
+#[tool]
+/// AAAAAA
+/// I'm so scared
+impl Scream {
+    fn call(input: &str) -> String {
+        input.to_uppercase()
+    }
 }
 
-/// Places an order based off of an sku and quantity
+struct DBConn {
+    url: String,
+    port: u32,
+}
+
+impl DBConn {
+    fn new() -> Self {
+        Self {
+            url: "https://localhost".to_string(),
+            port: 3000,
+        }
+    }
+}
+
 #[tool]
-impl Order {
-    pub fn call(&self, sku: i32, quantity: usize) {
-        unimplemented!("Not yet ready!")
+/// Connects to a DB
+impl DBConn {
+    fn call(&self) -> &Self {
+        self
     }
 }
 
 fn main() {
-    println!("Signature: {}", Add::signature());
-    println!("Description\n{}", Add::description());
-    println!("\n");
-    println!("Signature: {}", Order::signature());
-    println!("Description:\n{}", Order::description());
+    let mut collection = ToolCollection::new();
+    collection.add(Multiply::default());
+    collection.add(Scream::default());
+    collection.add(DBConn::new());
+
+    // LLM context: Show available tools
+    for tool in collection.list_tools() {
+        println!("Tool Signature: {}", tool.signature);
+        println!("Description: {}", tool.description);
+        println!("-------------------");
+    }
+
+    // When LLM selects a tool
+    if let Some(math) = collection.get_tool::<Multiply>() {
+        let result = Multiply::call(2, 3);
+        println!("Math result: {}", result);
+    }
 }
