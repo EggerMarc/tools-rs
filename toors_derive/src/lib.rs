@@ -1,31 +1,71 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, Attribute, DeriveInput, FnArg, ImplItem, ItemImpl, Pat, ReturnType};
-/*
+use syn::{
+    parse_macro_input, Attribute, Data, DeriveInput, FnArg, ImplItem, ItemImpl, Pat, ReturnType,
+};
+
 #[proc_macro_derive(Tool, attributes(doc))]
 pub fn derive_tool(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let struct_name = &input.ident;
 
-    // Parse struct-level documentation
-    let struct_docs = get_docs(&input.attrs);
+    // Extract struct-level documentation using the same technique as the `tools` macro
+    let struct_docs = input
+        .attrs
+        .iter()
+        .filter_map(|attr| {
+            Some(
+                attr.to_token_stream()
+                    .to_string()
+                    .strip_prefix("#[doc = \"")?
+                    .strip_suffix("\"]")?
+                    .to_string(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    // Parse fields documentation
-    let field_descriptions = if let syn::Data::Struct(s) = input.data {
-        s.fields
-            .iter()
-            .filter_map(|f| {
-                let name = f.ident.as_ref()?;
-                let docs = get_docs(&f.attrs);
-                Some(format!("{}: {}\n", name, docs))
-            })
-            .collect::<Vec<String>>()
-            .join("")
-    } else {
-        panic!("Tool can only be derived for structs");
+    // Ensure the macro is applied to a struct
+    let field_descriptions = match &input.data {
+        Data::Struct(s) => {
+            s.fields
+                .iter()
+                .filter_map(|f| {
+                    let name = f.ident.as_ref()?.to_string(); // Convert Ident to String
+
+                    // Extract field documentation
+                    let field_docs = f
+                        .attrs
+                        .iter()
+                        .filter_map(|attr| {
+                            Some(
+                                attr.to_token_stream()
+                                    .to_string()
+                                    .strip_prefix("#[doc = \"")?
+                                    .strip_suffix("\"]")?
+                                    .to_string(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    Some(format!("{}: {}", name, field_docs))
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        _ => {
+            return syn::Error::new_spanned(
+                struct_name,
+                "Error: #[derive(Tool)] can only be used on structs.",
+            )
+            .to_compile_error()
+            .into();
+        }
     };
 
+    // Generate the trait implementation
     let expanded = quote! {
         impl ::toors::Tool for #struct_name {
             fn description() -> &'static str {
@@ -40,7 +80,7 @@ pub fn derive_tool(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-*/
+
 #[proc_macro_attribute]
 pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let impl_block = parse_macro_input!(item as ItemImpl);
