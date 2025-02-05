@@ -1,31 +1,41 @@
 use toors::ToolCollection;
-use toors_derive::tool;
+use toors_derive::{tools};
 
 #[derive(Default)]
+/// This structs contains multiplication helpers
 struct Multiply;
 
-#[tool]
-/// Multiply two values 
+#[tools]
 impl Multiply {
-    fn call(a: i32, b: i32) -> i32 {
-        a + b
+    /// Multiply two values
+    fn mul_two(a: i32, b: i32) -> i32 {
+        a * b
+    }
+    
+
+    /// Multiply three values, wow
+    fn mul_three(a: i32, b: i32, c: i32) -> i32 {
+        a * b * c
     }
 }
 
 #[derive(Default)]
 struct Scream;
 
-#[tool]
-/// AAAAAA
-/// I'm so scared
+#[tools]
 impl Scream {
     fn call(input: &str) -> String {
         input.to_uppercase()
     }
 }
 
+#[derive(Default)]
+/// Some tool
 struct DBConn {
+    /// Url of the database
     url: String,
+
+    /// Port of the database
     port: u32,
 }
 
@@ -38,30 +48,25 @@ impl DBConn {
     }
 }
 
-#[tool]
+#[tools]
 /// Connects to a DB
 impl DBConn {
+    /// Call db
+    #[doc = "Some old styled documentation"]
     fn call(&self) -> &Self {
         self
     }
 }
 
-fn main() {
-    let mut collection = ToolCollection::new();
-    collection.add(Multiply::default());
-    collection.add(Scream::default());
-    collection.add(DBConn::new());
+fn main() { 
+    let result = Multiply::mul_two(2, 3);
+    println!("Math result: {}", result);
 
-    // LLM context: Show available tools
-    for tool in collection.list_tools() {
-        println!("Tool Signature: {}", tool.signature);
-        println!("Description: {}", tool.description);
+    for (name, tool) in Multiply::tools().iter() {
+        println!(
+            "Tool name: {}\n\tSignature: {}\n\tDescription: {}",
+            name, tool.signature, tool.description
+        );
         println!("-------------------");
-    }
-
-    // When LLM selects a tool
-    if let Some(math) = collection.get_tool::<Multiply>() {
-        let result = Multiply::call(2, 3);
-        println!("Math result: {}", result);
     }
 }

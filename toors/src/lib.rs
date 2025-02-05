@@ -9,10 +9,19 @@ pub trait Tool: Any {
         Self: Sized;
 }
 
+#[derive(Clone)]
 pub struct ToolMetadata {
-    pub description: &'static str,
-    pub signature: &'static str,
-    pub type_id: TypeId,
+    pub description: String,
+    pub signature: String, //pub type_id: TypeId,
+}
+
+impl ToolMetadata {
+    fn from(signature: String, description: String) -> Self {
+        ToolMetadata {
+            signature,
+            description,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -32,9 +41,9 @@ impl ToolCollection {
     pub fn add<T: Tool + 'static>(&mut self, tool: T) {
         let type_id = TypeId::of::<T>();
         self.tools.push(ToolMetadata {
-            description: T::description(),
-            signature: T::signature(),
-            type_id,
+            description: T::description().to_string(),
+            signature: T::signature().to_string(),
+            //type_id,
         });
         self.instances.insert(type_id, Box::new(tool));
     }
