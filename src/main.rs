@@ -1,5 +1,5 @@
 use toors::Tool;
-use toors_derive::Tool;
+use toors_derive::{tools, Tool};
 
 /// This tool is an example.
 #[derive(Tool)]
@@ -9,6 +9,14 @@ struct MyTool<T: Clone> {
 
     /// It also works with generics!
     generic: T,
+}
+
+#[tools]
+impl<T: Clone> MyTool<T> {
+    /// Define a function as such, easy huh
+    fn some_func(&self) -> Option<String> {
+        Some("you got here".to_string())
+    }
 }
 
 fn main() {
@@ -22,4 +30,5 @@ fn main() {
     println!("==============");
     println!("Description:\n{}", tool.description());
     println!("Signature metadata:\n{}", tool.signature());
+    println!("\ntools:\n{}", tool.tools().get("some_func").unwrap());
 }

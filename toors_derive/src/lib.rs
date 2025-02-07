@@ -1,11 +1,11 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use syn::{
     parse_macro_input, parse_quote, Attribute, Data, DeriveInput, FnArg, GenericParam, ImplItem,
     ItemImpl, Pat, ReturnType,
 };
-use proc_macro2::Span;
 
 #[proc_macro_derive(Tool, attributes(doc))]
 pub fn derive_tool(input: TokenStream) -> TokenStream {
@@ -60,7 +60,7 @@ pub fn derive_tool(input: TokenStream) -> TokenStream {
                         .collect::<Vec<_>>()
                         .join(" ");
                     desc_lines.push(format!(" - {}: {}", field_name, field_docs));
-                    
+
                     // Generate an expression that will compute the field's runtime type.
                     let field_name_lit = syn::LitStr::new(&field_name, Span::call_site());
                     let field_ty = &f.ty;
@@ -105,23 +105,42 @@ pub fn derive_tool(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-
-
-/// The attribute macro remains largely the same.
-/// It collects method docs and creates a helper method `tools()`.
 #[proc_macro_attribute]
 pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let impl_block = parse_macro_input!(item as ItemImpl);
-    let struct_name = &impl_block.self_ty;
-    let struct_name_str = struct_name.to_token_stream().to_string();
+    let mut impl_block = parse_macro_input!(item as ItemImpl);
+    let struct_ty = &*impl_block.self_ty;
 
+    // Extract generics from the original impl block
+    let generics = &impl_block.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    // Extract struct identifier from type path
+    let struct_ident = match struct_ty {
+        syn::Type::Path(type_path) => {
+            if let Some(segment) = type_path.path.segments.last() {
+                &segment.ident
+            } else {
+                return syn::Error::new_spanned(struct_ty, "Invalid type path")
+                    .to_compile_error()
+                    .into();
+            }
+        }
+        _ => {
+            return syn::Error::new_spanned(struct_ty, "Expected a type path")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let struct_name_str = struct_ty.to_token_stream().to_string();
+
+    // Collect method metadata (unchanged from original)
     let meta_tokens: Vec<_> = impl_block
         .items
         .iter()
         .filter_map(|item| match item {
-            ImplItem::Fn(method) => {
+            syn::ImplItem::Fn(method) => {
                 let name = method.sig.ident.to_string();
-                // Extract doc comments for the method.
                 let description = method
                     .attrs
                     .iter()
@@ -143,9 +162,9 @@ pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     .inputs
                     .iter()
                     .filter_map(|input| match input {
-                        FnArg::Typed(pat_type) => {
+                        syn::FnArg::Typed(pat_type) => {
                             let name = match &*pat_type.pat {
-                                Pat::Ident(ident) => ident.ident.to_string(),
+                                syn::Pat::Ident(ident) => ident.ident.to_string(),
                                 _ => "_".to_string(),
                             };
                             let ty = pat_type.ty.to_token_stream().to_string();
@@ -157,7 +176,7 @@ pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     .join(", ");
 
                 let return_type = match &method.sig.output {
-                    ReturnType::Type(_, ty) => ty.to_token_stream().to_string(),
+                    syn::ReturnType::Type(_, ty) => ty.to_token_stream().to_string(),
                     _ => "()".to_string(),
                 };
 
@@ -168,6 +187,7 @@ pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
                 Some(quote! {
                     map.insert(#name.to_string(), ::toors::ToolMetadata {
+                        name: #name.to_string(),
                         description: #description.to_string(),
                         signature: #signature.to_string(),
                     });
@@ -177,11 +197,12 @@ pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // Generate implementation with correct generics and instance method
     let expanded = quote! {
         #impl_block
 
-        impl #struct_name {
-            pub fn tools() -> std::collections::HashMap<String, ::toors::ToolMetadata> {
+        impl #impl_generics #struct_ident #ty_generics #where_clause {
+            pub fn tools(&self) -> std::collections::HashMap<String, ::toors::ToolMetadata> {
                 let mut map = std::collections::HashMap::new();
                 #(#meta_tokens)*
                 map
@@ -191,4 +212,3 @@ pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-
