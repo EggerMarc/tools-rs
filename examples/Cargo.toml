@@ -1,0 +1,21 @@
+[package]
+name = "examples"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+toors={path="../toors"}
+toors_derive={path="../toors_derive"}
+
+[[example]]
+name="db"
+path="db.rs"
+
+[[example]]
+name="kalosm"
+path="kalosm.rs"
+
+[[example]]
+name="whatsapp"
+path="whatsapp.rs"
+

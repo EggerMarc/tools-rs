@@ -1,50 +1,71 @@
+use core::fmt;
 use std::any::{Any, TypeId};
+use std::collections::HashMap;
 
 pub trait Tool: Any {
-    fn description() -> &'static str
-    where
-        Self: Sized;
-    fn signature() -> &'static str
-    where
-        Self: Sized;
+    /// Returns a prettified description of the tool.
+    fn description(&self) -> &'static str;
+
+    /// Returns full metadata including the tool’s name, its signature (i.e. the input
+    /// argument types computed at runtime), and its description.
+    fn signature(&self) -> ToolMetadata;
 }
 
 #[derive(Clone)]
 pub struct ToolMetadata {
+    pub name: String,
     pub description: String,
-    pub signature: String, //pub type_id: TypeId,
+    pub signature: String,
 }
 
 impl ToolMetadata {
-    fn from(signature: String, description: String) -> Self {
+    pub fn from(name: String, signature: String, description: String) -> Self {
         ToolMetadata {
+            name,
             signature,
             description,
         }
     }
 }
 
+impl fmt::Display for ToolMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Name: {}\nDescription: {}\nSignature: {}",
+            self.name, self.description, self.signature
+        )
+    }
+}
+
+impl fmt::Debug for ToolMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ToolMetadata {{ name: {:?}, description: {:?}, signature: {:?} }}",
+            self.name, self.description, self.signature
+        )
+    }
+}
+
 #[derive(Default)]
 pub struct ToolCollection {
     tools: Vec<ToolMetadata>,
-    instances: std::collections::HashMap<TypeId, Box<dyn Any>>,
+    instances: HashMap<TypeId, Box<dyn Any>>,
 }
 
 impl ToolCollection {
     pub fn new() -> Self {
         Self {
             tools: Vec::new(),
-            instances: std::collections::HashMap::new(),
+            instances: HashMap::new(),
         }
     }
 
     pub fn add<T: Tool + 'static>(&mut self, tool: T) {
         let type_id = TypeId::of::<T>();
-        self.tools.push(ToolMetadata {
-            description: T::description().to_string(),
-            signature: T::signature().to_string(),
-            //type_id,
-        });
+        // Use the instance method, which computes metadata at runtime.
+        self.tools.push(tool.signature());
         self.instances.insert(type_id, Box::new(tool));
     }
 
@@ -58,3 +79,4 @@ impl ToolCollection {
             .and_then(|b| b.downcast_ref())
     }
 }
+

@@ -8,7 +8,7 @@ toors = { path = "./toors" }
 toors_derive = { path ="./toors_derive" }
 
 [workspace]
-members = [
+members = [ "examples",
     "toors",
     "toors_derive"
 ]

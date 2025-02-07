@@ -1,87 +1,25 @@
-use toors::{Tool, ToolCollection};
-use toors_derive::{tools, Tool};
+use toors::Tool;
+use toors_derive::Tool;
 
-#[derive(Default, Tool)]
-/// This structs contains multiplication helpers
-struct Multiply;
+/// This tool is an example.
+#[derive(Tool)]
+struct MyTool<T: Clone> {
+    /// Argument which does some string manipulation.
+    arg: String,
 
-#[tools]
-impl Multiply {
-    /// Multiply two values
-    fn mul_two(a: i32, b: i32) -> i32 {
-        a * b
-    }
-
-    /// Multiply three values, wow
-    fn mul_three(a: i32, b: i32, c: i32) -> i32 {
-        a * b * c
-    }
-}
-
-#[derive(Default, Tool)]
-struct Scream;
-
-#[tools]
-impl Scream {
-    fn call(input: &str) -> String {
-        input.to_uppercase()
-    }
-}
-
-#[derive(Default, Tool)]
-/// Some tool
-struct DBConn {
-    /// Url of the database
-    url: String,
-
-    /// Port of the database
-    port: u32,
-}
-
-impl DBConn {
-    fn new() -> Self {
-        Self {
-            url: "https://localhost".to_string(),
-            port: 3000,
-        }
-    }
-}
-
-#[tools]
-/// Connects to a DB
-impl DBConn {
-    /// Call db
-    #[doc = "Some old styled documentation"]
-    fn call(&self) -> &Self {
-        self
-    }
+    /// It also works with generics!
+    generic: T,
 }
 
 fn main() {
-    let result = Multiply::mul_two(2, 3);
-    let mut collection = ToolCollection::new();
-    collection.add(Multiply::default());
-    collection.add(Scream::default());
-    collection.add(DBConn::new());
+    // Create an instance of MyTool.
+    let tool = MyTool {
+        arg: "Hello".to_string(),
+        generic: 1,
+    };
 
-
-
-    for (name, tool) in DBConn::tools().iter() {
-        println!(
-            "tool name: {}\n\tSignature: {}\n\tDescription: {}",
-            name, tool.signature, tool.description
-        );
-        println!("-------------------");
-    }
-    
-    for (tool) in collection.list_tools().iter() {
-        println!("Tool Signature:\n{}\n", {&tool.signature}); 
-        println!("Tool Description:\n{}\n", {&tool.description});
-        println!("--------------------");
-    }
-    println!(
-        "Tool struct: DBConn\n\tDescription: {}\n\tArgs: {}",
-        DBConn::description(),
-        DBConn::signature()
-    )
+    // Instance methods.
+    println!("==============");
+    println!("Description:\n{}", tool.description());
+    println!("Signature metadata:\n{}", tool.signature());
 }

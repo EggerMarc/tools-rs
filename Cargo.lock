@@ -3,6 +3,14 @@
 version = 3
 
 [[package]]
+name = "examples"
+version = "0.1.0"
+dependencies = [
+ "toors",
+ "toors_derive",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
