@@ -1,3 +1,4 @@
+use erased_serde::Serialize as ErasedSerialize;
 use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,8 @@ pub struct ToolCollection {
     signatures: HashMap<&'static str, (TypeId, TypeId)>, // (Input TypeId, Output TypeId)
 }
 
-type ToolFunc = dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn Any + Send + Sync> + Send + Sync;
+type ToolFunc =
+    dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn ErasedSerialize + Send + Sync> + Send + Sync;
 
 impl ToolCollection {
     pub fn new() -> Self {
@@ -23,6 +25,7 @@ impl ToolCollection {
             signatures: HashMap::new(),
         }
     }
+
     pub fn register<I, O, F>(
         &mut self,
         name: &'static str,
@@ -41,38 +44,34 @@ impl ToolCollection {
         self.funcs.insert(
             name,
             Arc::new(move |input: Box<dyn Any + Send + Sync>| {
-                // Expect our arguments to be wrapped in an Args struct.
                 let args = input.downcast_ref::<Args>().expect("Invalid argument type");
                 let input_cloned = args.0.clone();
 
                 let typed_input: I = if input_cloned.is_empty() {
-                    // If no arguments are provided, assume the function expects ()
                     serde_json::from_value(Value::Null)
                 } else if input_cloned.len() == 1 {
-                    // If there's one argument, first try to deserialize as an array.
-                    // This covers the case where the function expects a tuple with one element.
-                    serde_json::from_value(Value::Array(input_cloned.clone()))
-                        // Fallback: if that fails, try deserializing the single value directly.
-                        .or_else(|_| {
-                            serde_json::from_value(
-                                input_cloned.into_iter().next().expect("Expected a value"),
-                            )
-                        })
+                    serde_json::from_value(Value::Array(input_cloned.clone())).or_else(|_| {
+                        serde_json::from_value(
+                            input_cloned.into_iter().next().expect("Expected a value"),
+                        )
+                    })
                 } else {
-                    // Multiple arguments: wrap them in an array so that they can
-                    // be deserialized into a tuple.
                     serde_json::from_value(Value::Array(input_cloned))
                 }
                 .expect("Failed to deserialize input into the expected type");
 
                 let output = func(typed_input);
-                Box::new(output)
+                Box::new(output) as Box<dyn ErasedSerialize + Send + Sync>
             }),
         );
         self
     }
 
-    pub fn call(&self, name: &str, input_str: &str) -> Result<Box<dyn Any + Send + Sync>, String> {
+    pub fn call(
+        &self,
+        name: &str,
+        input_str: &str,
+    ) -> Result<Box<dyn ErasedSerialize + Send + Sync>, String> {
         if let Some(func) = self.funcs.get(name) {
             let (_, args) =
                 parse(input_str).map_err(|e| format!("Failed to parse input: {}", e))?;
@@ -82,65 +81,26 @@ impl ToolCollection {
             Err(format!("Function '{}' not found", name))
         }
     }
-
     pub fn call_to_json(&self, name: &str, input_str: &str) -> Result<Value, String> {
         let result = self.call(name, input_str)?;
 
-        let (_, expected_output) = self
-            .signatures
-            .get(name)
-            .ok_or_else(|| format!("Function '{}' not found", name))?;
-        if let Some(value) = result.downcast_ref::<i32>() {
-            Ok(Value::Number(serde_json::Number::from(*value)))
-        } else if let Some(value) = result.downcast_ref::<String>() {
-            Ok(Value::String(value.clone()))
-        } else if let Some(value) = result.downcast_ref::<bool>() {
-            Ok(Value::Bool(*value))
-        } else if let Some(value) = result.downcast_ref::<f64>() {
-            Ok(Value::Number(serde_json::Number::from_f64(*value).unwrap()))
-        } else if let Some(value) = result.downcast_ref::<Value>() {
-            Ok(value.clone())
-        } else if result.downcast_ref::<()>().is_some() {
-            Ok(Value::Null)
-        } else {
-            Err(format!("Unsupported return type: {:?}", expected_output))
-        }
+        serde_json::to_value(&*result).map_err(|e| format!("Serialization error: {}", e))
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct Args(Vec<Value>);
 
 fn parse(cmd: &str) -> Result<(&str, Args), Box<dyn std::error::Error>> {
     let re = Regex::new(r"^(.+?)\((.*)\)$")?;
     let captures = re.captures(cmd).ok_or("Invalid command format")?;
 
     let name = captures.get(1).unwrap().as_str();
-
     let args_str = captures.get(2).unwrap().as_str();
     let args_json = format!("[{}]", args_str);
     let args: Args = serde_json::from_str(&args_json)?;
 
     Ok((name, args))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
-pub struct Args(pub Vec<Value>);
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Signature {
-    pub args: Args,
-    pub returns: Args,
-}
-
-#[derive(Clone)]
-pub struct ToolMetadata {
-    pub name: String,
-    pub description: String,
-    pub signature: Signature,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
-pub struct SomeArgs {
-    pub a: i32,
-    pub b: i32,
 }
 
 #[cfg(test)]
@@ -158,6 +118,11 @@ mod tests {
 
     fn noop() {}
 
+    #[derive(PartialEq, Serialize, Deserialize)]
+    struct SomeArgs {
+        a: i32,
+        b: i32,
+    }
     fn using_args(_args: SomeArgs) {}
 
     // Test the registration and calling of functions via ToolCollection.
@@ -231,18 +196,9 @@ mod tests {
     // Test parsing failures with malformed commands.
     #[test]
     fn test_parser_failure() {
-        let invalid_inputs = vec![
-            "missing_parenthesis",
-            "func(1,2",
-            "func1,2)",
-            "func(,)",
-        ];
+        let invalid_inputs = vec!["missing_parenthesis", "func(1,2", "func1,2)", "func(,)"];
         for input in invalid_inputs {
-            assert!(
-                parse(input).is_err(),
-                "Parser should fail on: {}",
-                input
-            );
+            assert!(parse(input).is_err(), "Parser should fail on: {}", input);
         }
     }
 
@@ -274,7 +230,10 @@ mod tests {
     fn test_complex_return() {
         let mut collection = ToolCollection::default();
         collection.register("create_point", "Creates a point", |args: (i32, i32)| {
-            Point { x: args.0, y: args.1 }
+            Point {
+                x: args.0,
+                y: args.1,
+            }
         });
         let result = collection
             .call_to_json("create_point", "create_point(10,20)")
@@ -371,5 +330,3 @@ mod tests {
         assert_eq!(result, json!("Hello, Alice!"));
     }
 }
-
-
