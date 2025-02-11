@@ -1,22 +1,14 @@
+use serde_json::{Number, Value};
 use toors::Tool;
 use toors_derive::{tools, Tool};
 
-/// This tool is an example.
-#[derive(Tool)]
-struct MyTool<T: Clone> {
-    /// Argument which does some string manipulation.
-    arg: String,
-
-    /// It also works with generics!
-    generic: T,
+struct Args {
+    a: i32,
+    b: i32
 }
 
-#[tools]
-impl<T: Clone> MyTool<T> {
-    /// Define a function as such, easy huh
-    fn some_func(&self) -> Option<String> {
-        Some("you got here".to_string())
-    }
+fn add(a: i32, b: i32) -> i32 {
+    a + b
 }
 
 fn main() {
@@ -26,9 +18,16 @@ fn main() {
         generic: 1,
     };
 
+    let args = Args {
+        a: 1,
+        b: 2
+    };
+
+    add(**args);
+
     // Instance methods.
     println!("==============");
     println!("Description:\n{}", tool.description());
     println!("Signature metadata:\n{}", tool.signature());
-    println!("\ntools:\n{}", tool.tools().get("some_func").unwrap());
-}
+    println!("\ntools:\n{}", tool.tools().get("some_func").unwrap()); // TODO work on this
+} 
