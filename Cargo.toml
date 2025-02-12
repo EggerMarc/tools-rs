@@ -7,12 +7,12 @@ edition = "2021"
 regex = "1.11.1"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.138"
-toors = { path = "./toors" }
+tools-rs = { path = "./toors" }
 toors_derive = { path ="./toors_derive" }
 
 [workspace]
 members = [ "examples",
-    "toors",
+    "tools-rs",
     "toors_derive"
 ]
 resolver = "2"

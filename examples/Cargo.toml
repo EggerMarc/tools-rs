@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dev-dependencies]
-toors={path="../toors"}
+tools-r-s={path="../toors"}
 toors_derive={path="../toors_derive"}
 
 [[example]]

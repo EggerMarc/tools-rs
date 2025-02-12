@@ -15,7 +15,7 @@ dependencies = [
 name = "examples"
 version = "0.1.0"
 dependencies = [
- "toors",
+ "tools-rs",
  "toors_derive",
 ]
 
@@ -128,7 +128,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "toors"
+name = "tools-rs"
 version = "0.1.0"
 dependencies = [
  "regex",
@@ -143,7 +143,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "toors",
+ "tools-rs",
  "toors_derive",
 ]
 
@@ -154,7 +154,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
- "toors",
+ "tools-rs",
 ]
 
 [[package]]
