@@ -5,22 +5,31 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 #[derive(Default)]
 pub struct ToolCollection {
     funcs: HashMap<&'static str, Arc<ToolFunc>>,
+    async_funcs: HashMap<&'static str, Arc<AsyncToolFunc>>,
     descriptions: HashMap<&'static str, &'static str>,
     signatures: HashMap<&'static str, (TypeId, TypeId)>, // (Input TypeId, Output TypeId)
 }
 
 type ToolFunc =
     dyn Fn(Box<dyn Any + Send + Sync>) -> Box<dyn ErasedSerialize + Send + Sync> + Send + Sync;
+type AsyncToolFunc = dyn Fn(
+        Box<dyn Any + Send + Sync>,
+    ) -> Pin<Box<dyn Future<Output = Box<dyn ErasedSerialize + Send + Sync>> + Send>>
+    + Send
+    + Sync;
 
 impl ToolCollection {
     pub fn new() -> Self {
         Self {
             funcs: HashMap::new(),
+            async_funcs: HashMap::new(),
             descriptions: HashMap::new(),
             signatures: HashMap::new(),
         }
@@ -66,23 +75,76 @@ impl ToolCollection {
         );
         self
     }
+    pub fn register_async<I, O, F, Fut>(
+        &mut self,
+        name: &'static str,
+        description: &'static str,
+        func: F,
+    ) -> &Self
+    where
+        I: 'static + Serialize + DeserializeOwned + Send + Sync,
+        O: 'static + Serialize + Send + Sync,
+        F: Fn(I) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = O> + Send + 'static,
+    {
+        self.descriptions.insert(name, description);
+        self.signatures
+            .insert(name, (TypeId::of::<I>(), TypeId::of::<O>()));
 
-    pub fn call(
+        self.async_funcs.insert(
+            name,
+            Arc::new(move |input: Box<dyn Any + Send + Sync>| {
+                let args = input.downcast_ref::<Args>().expect("Invalid argument type");
+                let input_cloned = args.0.clone();
+
+                let typed_input: I = if input_cloned.is_empty() {
+                    serde_json::from_value(Value::Null)
+                } else if input_cloned.len() == 1 {
+                    serde_json::from_value(Value::Array(input_cloned.clone())).or_else(|_| {
+                        serde_json::from_value(
+                            input_cloned.into_iter().next().expect("Expected a value"),
+                        )
+                    })
+                } else {
+                    serde_json::from_value(Value::Array(input_cloned))
+                }
+                .expect("Failed to deserialize input into the expected type");
+
+                let future = func(typed_input);
+                let boxed_future: Pin<
+                    Box<dyn Future<Output = Box<dyn ErasedSerialize + Send + Sync>> + Send>,
+                > = Box::pin(async move {
+                    let output = future.await;
+                    Box::new(output) as Box<dyn ErasedSerialize + Send + Sync>
+                });
+                boxed_future
+            }),
+        );
+        self
+    }
+    pub async fn call(
         &self,
         name: &str,
         input_str: &str,
     ) -> Result<Box<dyn ErasedSerialize + Send + Sync>, String> {
         if let Some(func) = self.funcs.get(name) {
+            // ... (Synchronous call - no changes)
             let (_, args) =
                 parse(input_str).map_err(|e| format!("Failed to parse input: {}", e))?;
             let result = func(Box::new(args));
+            Ok(result)
+        } else if let Some(async_func) = self.async_funcs.get(name) {
+            let (_, args) =
+                parse(input_str).map_err(|e| format!("Failed to parse input: {}", e))?;
+            let future = async_func(Box::new(args));
+            let result = future.await; // Await the future here
             Ok(result)
         } else {
             Err(format!("Function '{}' not found", name))
         }
     }
-    pub fn call_to_json(&self, name: &str, input_str: &str) -> Result<Value, String> {
-        let result = self.call(name, input_str)?;
+    pub async fn call_to_json(&self, name: &str, input_str: &str) -> Result<Value, String> {
+        let result = self.call(name, input_str).await?;
 
         serde_json::to_value(&*result).map_err(|e| format!("Serialization error: {}", e))
     }
@@ -126,8 +188,8 @@ mod tests {
     fn using_args(_args: SomeArgs) {}
 
     // Test the registration and calling of functions via ToolCollection.
-    #[test]
-    fn test_collection() {
+    #[tokio::test]
+    async fn test_collection() {
         let mut collection = ToolCollection::default();
         collection.register("add", "Adds two values", |args: (i32, i32)| {
             add(args.0, args.1)
@@ -144,15 +206,17 @@ mod tests {
 
         let add_result = collection
             .call_to_json("add", "add(1,2)")
+            .await
             .expect("Failed to call add");
         let concat_result = collection
             .call_to_json("concat", "concat(\"hello\",\"world\")")
+            .await
             .expect("Failed to call concat");
         let noop_result = collection
-            .call_to_json("noop", "noop()")
+            .call_to_json("noop", "noop()").await
             .expect("Failed to call noop");
         let complex_args_result = collection
-            .call_to_json("complex_args", "complex_args({\"a\":1,\"b\":2})")
+            .call_to_json("complex_args", "complex_args({\"a\":1,\"b\":2})").await
             .expect("Failed to call complex_args");
 
         assert_eq!(add_result, json!(3));
@@ -203,17 +267,17 @@ mod tests {
     }
 
     // Test calling a function that returns a boolean.
-    #[test]
-    fn test_boolean_function() {
+    #[tokio::test]
+    async fn test_boolean_function() {
         let mut collection = ToolCollection::default();
         collection.register("is_even", "Checks if a number is even", |args: (i32,)| {
             args.0 % 2 == 0
         });
         let result_even = collection
-            .call_to_json("is_even", "is_even(4)")
+            .call_to_json("is_even", "is_even(4)").await
             .expect("Failed to call is_even with even number");
         let result_odd = collection
-            .call_to_json("is_even", "is_even(3)")
+            .call_to_json("is_even", "is_even(3)").await
             .expect("Failed to call is_even with odd number");
         assert_eq!(result_even, json!(true));
         assert_eq!(result_odd, json!(false));
@@ -226,8 +290,8 @@ mod tests {
         y: i32,
     }
 
-    #[test]
-    fn test_complex_return() {
+    #[tokio::test]
+    async fn test_complex_return() {
         let mut collection = ToolCollection::default();
         collection.register("create_point", "Creates a point", |args: (i32, i32)| {
             Point {
@@ -236,31 +300,31 @@ mod tests {
             }
         });
         let result = collection
-            .call_to_json("create_point", "create_point(10,20)")
+            .call_to_json("create_point", "create_point(10,20)").await
             .expect("Failed to call create_point");
         assert_eq!(result, json!({"x": 10, "y": 20}));
     }
 
     // Test a function that takes a tuple with a single element.
-    #[test]
-    fn test_single_argument_tuple() {
+    #[tokio::test]
+    async fn test_single_argument_tuple() {
         let mut collection = ToolCollection::default();
         collection.register("square", "Squares a number", |args: (i32,)| {
             let x = args.0;
             x * x
         });
         let result = collection
-            .call_to_json("square", "square(5)")
+            .call_to_json("square", "square(5)").await
             .expect("Failed to call square");
         assert_eq!(result, json!(25));
     }
 
     // Test calling a function with a non-existent name.
-    #[test]
-    fn test_invalid_function_name() {
+    #[tokio::test]
+    async fn test_invalid_function_name() {
         let mut collection = ToolCollection::default();
         collection.register("test", "Dummy function", |_args: ()| {});
-        let result = collection.call_to_json("non_existent", "non_existent()");
+        let result = collection.call_to_json("non_existent", "non_existent()").await;
         assert!(
             result.is_err(),
             "Calling a non-existent function should return an error"
@@ -268,14 +332,14 @@ mod tests {
     }
 
     // Test a function that takes a vector as an argument.
-    #[test]
-    fn test_vector_argument() {
+    #[tokio::test]
+    async fn test_vector_argument() {
         let mut collection = ToolCollection::default();
         collection.register("sum", "Sums an array of numbers", |args: (Vec<i32>,)| {
             args.0.iter().sum::<i32>()
         });
         let result = collection
-            .call_to_json("sum", "sum([1,2,3,4])")
+            .call_to_json("sum", "sum([1,2,3,4])").await
             .expect("Failed to call sum");
         assert_eq!(result, json!(10));
     }
@@ -287,8 +351,8 @@ mod tests {
         port: u16,
     }
 
-    #[test]
-    fn test_struct_argument() {
+    #[tokio::test]
+    async fn test_struct_argument() {
         let mut collection = ToolCollection::default();
         collection.register("config_info", "Processes a config", |config: Config| {
             format!("{}:{}", config.host, config.port)
@@ -297,20 +361,20 @@ mod tests {
             .call_to_json(
                 "config_info",
                 "config_info({\"host\": \"localhost\", \"port\": 8080})",
-            )
+            ).await
             .expect("Failed to call config_info");
         assert_eq!(result, json!("localhost:8080"));
     }
 
     // Test error handling when deserialization of the input fails.
-    #[test]
-    fn test_deserialization_error() {
+    #[tokio::test]
+    async fn test_deserialization_error() {
         let mut collection = ToolCollection::default();
         collection.register("subtract", "Subtracts two numbers", |args: (i32, i32)| {
             args.0 - args.1
         });
         // Provide strings instead of numbers to trigger a deserialization error.
-        let result = collection.call_to_json("subtract", "subtract(\"a\", \"b\")");
+        let result = collection.call_to_json("subtract", "subtract(\"a\", \"b\")").await;
         assert!(
             result.is_err(),
             "Deserialization should fail for invalid input types"
@@ -318,15 +382,31 @@ mod tests {
     }
 
     // Test a function that takes a string and returns a greeting.
-    #[test]
-    fn test_string_function() {
+    #[tokio::test]
+    async fn test_string_function() {
         let mut collection = ToolCollection::default();
         collection.register("greet", "Greets someone", |args: (String,)| {
             format!("Hello, {}!", args.0)
         });
         let result = collection
-            .call_to_json("greet", "greet(\"Alice\")")
+            .call_to_json("greet", "greet(\"Alice\")").await
             .expect("Failed to call greet");
         assert_eq!(result, json!("Hello, Alice!"));
     }
+    
+    async fn async_foo() {}
+
+    #[tokio::test]
+    async fn test_async_function() {
+        let mut collection = ToolCollection::default();
+        collection.register_async("async_foo", "This function does nil", |_args: ()| async {
+            async_foo().await
+        });
+
+        let result = collection.call_to_json("async_foo", "async_foo()").await.expect("Failed to call async_foo");
+        assert_eq!(result, json!(()));
+    }
 }
+
+
+
