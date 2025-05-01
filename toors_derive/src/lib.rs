@@ -107,7 +107,7 @@ pub fn derive_tool(input: TokenStream) -> TokenStream {
 }
 #[proc_macro_attribute]
 pub fn tools(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut impl_block = parse_macro_input!(item as ItemImpl);
+    let impl_block = parse_macro_input!(item as ItemImpl);
     let struct_ty = &*impl_block.self_ty;
 
     // Extract generics from the original impl block
