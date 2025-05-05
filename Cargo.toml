@@ -1,18 +1,16 @@
 [package]
-name = "toors_core"
-version = "0.1.0"
 edition = "2021"
+name    = "toors_core"
+version = "0.1.0"
 
 [dependencies]
-regex = "1.11.1"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
-toors = { path = "./toors" }
-toors_derive = { path ="./toors_derive" }
+inventory    = "0.3.20"
+serde        = { version = "1.0.219", features = ["derive"] }
+serde_json   = "1.0.140"
+tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
+toors        = { path = "./toors" }
+toors_macros = { path = "./toors_macros" }
 
 [workspace]
-members = [ "examples",
-    "toors",
-    "toors_derive"
-]
+members  = ["toors", "toors_macros", "examples"]
 resolver = "2"

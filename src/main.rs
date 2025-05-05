@@ -1,33 +1,39 @@
-use serde_json::{Number, Value};
-use toors::Tool;
-use toors_derive::{tools, Tool};
+use serde_json::json;
+use toors::{FunctionCall, ToolCollection};
+use toors_macros::tool;
 
-struct Args {
-    a: i32,
-    b: i32
+#[tool]
+/// Adds two numbers.
+async fn add(pair: (i32, i32)) -> i32 {
+    pair.0 + pair.1
 }
 
-fn add(a: i32, b: i32) -> i32 {
-    a + b
+#[tool]
+/// Greets a person.
+async fn greet(name: String) -> String {
+    format!("Hello, {name}!")
 }
 
-fn main() {
-    // Create an instance of MyTool.
-    let tool = MyTool {
-        arg: "Hello".to_string(),
-        generic: 1,
-    };
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Auto‑populate from #[tool] functions
+    let hub = ToolCollection::collect_tools();
 
-    let args = Args {
-        a: 1,
-        b: 2
-    };
+    let sum = hub
+        .call(FunctionCall {
+            name: "add".into(),
+            arguments: json!([3, 4]),
+        })
+        .await?;
+    println!("add → {sum}");
 
-    add(**args);
+    let hi = hub
+        .call(FunctionCall {
+            name: "greet".into(),
+            arguments: json!("Alice"),
+        })
+        .await?;
+    println!("greet → {hi}");
 
-    // Instance methods.
-    println!("==============");
-    println!("Description:\n{}", tool.description());
-    println!("Signature metadata:\n{}", tool.signature());
-    println!("\ntools:\n{}", tool.tools().get("some_func").unwrap()); // TODO work on this
-} 
+    Ok(())
+}
