@@ -1,4 +1,4 @@
-//! toors_macros ‑ Procedural macros for **Tool Collection Runtime**
+//! toors_macros ‑ Procedural macros for **Toors Runtime**
 //! ================================================================
 //! This crate provides the `#[tool]` attribute, a one‑liner that turns any
 //! `async fn` into a **self‑registering** entry inside a
