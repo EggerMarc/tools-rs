@@ -12,10 +12,9 @@ name="db"
 path="db.rs"
 
 [[example]]
-name="kalosm"
-path="kalosm.rs"
+name="in_struct"
+path="in_struct.rs"
 
 [[example]]
-name="whatsapp"
-path="whatsapp.rs"
-
+name="example"
+path="example.rs"
