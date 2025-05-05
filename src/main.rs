@@ -16,7 +16,6 @@ async fn greet(name: String) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Auto‑populate from #[tool] functions
     let hub = ToolCollection::collect_tools();
 
     let sum = hub

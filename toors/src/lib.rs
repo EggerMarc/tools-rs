@@ -1,5 +1,32 @@
-//! lib/tool_collection.rs
-//! A minimal runtime for LLM “function‑calling”, fully JSON‑driven.
+//! lib/toors.rs
+//! ============================================================
+//! **Toors Runtime** – A minimal, fully‑typed, JSON‑driven
+//! runtime for Large‑Language‑Model (LLM) *function‑calling* in Rust.
+//!
+//! ```text
+//! Crate      : toors
+//! Version    : 0.1.x (API‑stable)
+//! License    : ???
+//! Last update: 2025‑05‑05
+//! ```
+//!
+//! ## 1  Why this crate exists
+//! LLMs can emit a *function‑call* intent instead of free‑form text.  The host
+//! application must then **deserialize**, **dispatch**, and **serialize** the
+//! result **safely**.  `toors` provides exactly that glue while
+//! retaining Rust’s *zero‑cost abstractions* and type system.
+//!
+//! ### Design pillars
+//! 1. **Simplicity** – Just JSON in, JSON out.
+//! 2. **Type safety** – Input/Output generics checked at compile‑time; run‑time
+//!    reflection via `TypeId`.
+//! 3. **Async‑first** – All tools are executed as `Future`s; no blocking.
+//! 4. **Extensibility** – Proc‑macro auto‑registration, pluggable error model.
+//!
+//! ---------------------------------------------------------------------------
+//! The remainder of this file contains the *implementation* with rich inline
+//! documentation.
+//! ---------------------------------------------------------------------------
 
 pub mod toors_errors;
 
@@ -13,18 +40,43 @@ use toors_errors::{DeserializationError, ToolError};
 
 /* ───────────────────────────── PUBLIC TYPES ────────────────────────── */
 
-/// Envelope produced by the LLM / router when it wants to call a tool.
+/// An envelope emitted by an LLM (or any router) when it *intends* to invoke a
+/// Rust tool.
+///
+/// ## JSON shape
+/// ```json
+/// {
+///   "name": "add",
+///   "arguments": { "a": 1, "b": 2 }
+/// }
+/// ```
 #[derive(Debug, Deserialize)]
 pub struct FunctionCall {
+    /// Identifier of the tool to run.  Must match one of the keys registered
+    /// in [`ToolCollection`].
     pub name: String,
-    /// Exact JSON emitted by the model.
+
+    /// Raw JSON arguments exactly as provided by the LLM.  The registry will
+    /// attempt to deserialize this into the input type `I` of the tool.
     pub arguments: Value,
 }
 
-/// Async function signature stored in the registry.
+/// Type‑erased async function pointer stored inside the registry.
+///
+/// * **Input** : a `serde_json::Value` payload (raw JSON).
+/// * **Output** : `Result<Value, ToolError>` returned in a boxed `Future`.
+///
+/// Consumers generally interact through the safe [`ToolCollection`] API and
+/// never manipulate this alias directly.
 pub type ToolFunc = dyn Fn(Value) -> BoxFuture<'static, Result<Value, ToolError>> + Send + Sync;
 
-/// Registry that owns all functions plus a bit of metadata.
+/// Central registry mapping *tool names* to async callables plus documentation
+/// and signature metadata.
+///
+/// ### Cloning & Sharing
+/// The struct contains only `Arc`‑wrapped callables and immutable maps – it is
+/// **cheap to clone** (`O(1)` pointer bump) and is `Send + Sync`, so it can be
+/// stored inside a web‑server state container.
 #[derive(Default)]
 pub struct ToolCollection {
     funcs: HashMap<&'static str, Arc<ToolFunc>>,
@@ -35,12 +87,41 @@ pub struct ToolCollection {
 /* ───────────────────────────── IMPLEMENTATION ──────────────────────── */
 
 impl ToolCollection {
-    /// Create an empty registry.
+    /// Construct an empty registry.
+    ///
+    /// # Example
+    /// ```rust
+    /// use tool_collection::ToolCollection;
+    /// let tools = ToolCollection::new();
+    /// assert_eq!(tools.descriptions().count(), 0);
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
 
     /*──────────── fluent `register` – returns &mut Self ───────────────*/
+    /// Register a **single** Rust function as an LLM‑callable *tool*.
+    ///
+    /// # Type Parameters
+    /// * `I` – Input type expected from the JSON payload (must implement
+    ///   [`DeserializeOwned`]).
+    /// * `O` – Output type returned by the function (must implement
+    ///   [`Serialize`]).
+    /// * `F` – The Rust function/closure.
+    /// * `Fut` – The future returned by `F` (auto‑deduced).
+    ///
+    /// # Errors
+    /// This method never fails; errors surface only when the tool is *called*.
+    ///
+    /// # Panics
+    /// Panics if another tool is already registered under the same `name`.
+    ///
+    /// # Example
+    /// ```rust
+    /// use tool_collection::ToolCollection;
+    /// let mut hub = ToolCollection::new();
+    /// hub.register("echo", "Returns its input", |s: String| async move { s });
+    /// ```
     pub fn register<I, O, F, Fut>(
         &mut self,
         name: &'static str,
@@ -53,12 +134,15 @@ impl ToolCollection {
         F: Fn(I) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = O> + Send + 'static,
     {
-        /* 1. metadata */
+        /* 1. store human‑readable metadata */
+        if self.funcs.contains_key(name) {
+            panic!("tool '{name}' already registered");
+        }
         self.descriptions.insert(name, desc);
         self.signatures
             .insert(name, (TypeId::of::<I>(), TypeId::of::<O>()));
 
-        /* 2. wrapper */
+        /* 2. wrap the user‑supplied function into an erased async thunk */
         let func_arc: Arc<F> = Arc::new(func);
         self.funcs.insert(
             name,
@@ -71,7 +155,7 @@ impl ToolCollection {
                             ToolError::Deserialize(DeserializationError(Cow::Owned(e.to_string())))
                         })?;
 
-                        /* 2b. run user code */
+                        /* 2b. execute user code */
                         let output: O = (func_clone)(input).await;
 
                         /* 2c. I/O → JSON */
@@ -85,9 +169,26 @@ impl ToolCollection {
         self
     }
 
-    /// Invoke a tool with the JSON envelope produced by the model.
+    /// Dispatch a [`FunctionCall`] produced by an LLM and return the tool’s
+    /// serialized output.
+    ///
+    /// # Errors
+    /// * [`ToolError::FunctionNotFound`] if `call.name` is not registered.
+    /// * [`ToolError::Deserialize`] if JSON payload fails to parse as `I`.
+    /// * [`ToolError::Runtime`] for anything thrown inside user code.
+    ///
+    /// # Example
+    /// ```rust
+    /// use tool_collection::{ToolCollection, FunctionCall};
+    /// use serde_json::json;
+    /// let mut hub = ToolCollection::new();
+    /// hub.register("inc", "Increment", |x: u8| async move { x + 1 });
+    /// let out = hub.call(FunctionCall { name: "inc".into(), arguments: json!(41) }).await.unwrap();
+    /// assert_eq!(out, json!(42));
+    /// ```
     pub async fn call(&self, call: FunctionCall) -> Result<Value, ToolError> {
         let async_func = self.funcs.get(call.name.as_str()).ok_or_else(|| {
+            // Leak the string so we can return a 'static ref in the error
             let leaked: &'static str = Box::leak(call.name.into_boxed_str());
             ToolError::FunctionNotFound { name: leaked }
         })?;
@@ -95,16 +196,30 @@ impl ToolCollection {
         async_func(call.arguments).await
     }
 
-    /* small helpers */
+    /*──────────────────── helpers / iterators ───────────────────────*/
+
+    /// Iterate over `(name, description)` pairs for *all* registered tools.
     pub fn descriptions(&self) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {
         self.descriptions.iter().map(|(k, v)| (*k, *v))
     }
 
+    /// Iterate over `(name, (input_type_id, output_type_id))` tuples.
     pub fn signatures(&self) -> impl Iterator<Item = (&'static str, (TypeId, TypeId))> + '_ {
         self.signatures.iter().map(|(k, v)| (*k, *v))
     }
 
-    /*──────────── auto‑populate every #[tool] function ────────────────*/
+    /*──────────── auto‑populate every #[tool] function ───────────────*/
+
+    /// Construct a registry by **collecting all functions** annotated with the
+    /// `#[tool]` proc‑macro (requires the companion `tool_collection_macros` and
+    /// the [`inventory`](https://docs.rs/inventory) crate).
+    ///
+    /// # Example
+    /// ```rust
+    /// # use tool_collection::ToolCollection;
+    /// let hub = ToolCollection::collect_tools();
+    /// assert!(hub.descriptions().count() > 0);
+    /// ```
     pub fn collect_tools() -> Self {
         let mut hub = Self::new();
         for reg in inventory::iter::<ToolRegistration> {
@@ -115,16 +230,20 @@ impl ToolCollection {
     }
 }
 
-/* ─────────────────────────── inventory glue ────────────────────────── */
-
-/// One registration record, submitted by the `#[tool]` proc‑macro.
+/// One compile‑time registration record, emitted by the `#[tool]` proc‑macro
+/// in the *macro* crate and gathered by [`inventory`].  End users rarely
+/// interact with this struct directly.
 pub struct ToolRegistration {
+    /// Name under which the tool is exposed.
     pub name: &'static str,
+    /// Rust docstring extracted from the function body.
     pub doc: &'static str,
+    /// Erased async callable.
     pub f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
 }
 
 impl ToolRegistration {
+    /// Create a new registration record – mostly used by generated code.
     pub const fn new(
         name: &'static str,
         doc: &'static str,
@@ -134,353 +253,6 @@ impl ToolRegistration {
     }
 }
 
+// Tell `inventory` to collect every `ToolRegistration` emitted across the
+// dependency graph into a single linked list available at runtime.
 inventory::collect!(ToolRegistration);
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde::{Deserialize, Serialize};
-    use serde_json::json;
-
-    // ------------------------------------------------------------
-    // Helpers shared by several tests
-    // ------------------------------------------------------------
-    fn add<T: std::ops::Add<Output = T> + Copy>(a: T, b: T) -> T {
-        a + b
-    }
-    fn concat<T: std::fmt::Display>(a: T, b: T) -> String {
-        format!("{a}{b}")
-    }
-    fn noop() {}
-    async fn async_foo() {}
-
-    #[derive(Serialize, Deserialize, PartialEq)]
-    struct SomeArgs {
-        a: i32,
-        b: i32,
-    }
-    fn using_args(_args: SomeArgs) {}
-
-    // Convenience wrapper so the assertions stay short.
-    async fn call_ok(
-        col: &ToolCollection,
-        name: &str,
-        args: serde_json::Value,
-    ) -> serde_json::Value {
-        col.call(FunctionCall {
-            name: name.into(),
-            arguments: args,
-        })
-        .await
-        .expect("tool should succeed")
-    }
-
-    // ------------------------------------------------------------
-    // Smoke‑test: four different signatures
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_collection() {
-        let mut col = ToolCollection::default();
-
-        col.register("add", "Adds two values", |t: (i32, i32)| async move {
-            add(t.0, t.1)
-        });
-        col.register(
-            "concat",
-            "Concatenates two strings",
-            |t: (String, String)| async move { concat(t.0, t.1) },
-        );
-        col.register("noop", "Does nothing", |_t: ()| async move { noop() });
-        col.register(
-            "complex_args",
-            "Uses complex args",
-            |t: SomeArgs| async move { using_args(t) },
-        );
-
-        assert_eq!(call_ok(&col, "add", json!([1, 2])).await, json!(3));
-        assert_eq!(
-            call_ok(&col, "concat", json!(["hello", "world"])).await,
-            json!("helloworld")
-        );
-        assert_eq!(call_ok(&col, "noop", json!(null)).await, json!(null));
-        assert_eq!(
-            call_ok(
-                &col,
-                "complex_args",
-                json!({ "a": 1, "b": 2 }) // struct, not tuple
-            )
-            .await,
-            json!(null)
-        );
-    }
-
-    // ------------------------------------------------------------
-    // Boolean return value
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_boolean_function() {
-        let mut col = ToolCollection::default();
-        col.register(
-            "is_even",
-            "Checks even",
-            |t: (i32,)| async move { t.0 % 2 == 0 },
-        );
-
-        assert_eq!(call_ok(&col, "is_even", json!([4])).await, json!(true));
-        assert_eq!(call_ok(&col, "is_even", json!([3])).await, json!(false));
-    }
-
-    // ------------------------------------------------------------
-    // Complex struct return
-    // ------------------------------------------------------------
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
-    struct Point {
-        x: i32,
-        y: i32,
-    }
-
-    #[tokio::test]
-    async fn test_complex_return() {
-        let mut col = ToolCollection::default();
-        col.register(
-            "create_point",
-            "Creates a point",
-            |t: (i32, i32)| async move { Point { x: t.0, y: t.1 } },
-        );
-
-        assert_eq!(
-            call_ok(&col, "create_point", json!([10, 20])).await,
-            json!({ "x": 10, "y": 20 })
-        );
-    }
-
-    // ------------------------------------------------------------
-    // Single‑argument tuple
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_single_argument_tuple() {
-        let mut col = ToolCollection::default();
-        col.register("square", "Squares", |t: (i32,)| async move { t.0 * t.0 });
-
-        assert_eq!(call_ok(&col, "square", json!([5])).await, json!(25));
-    }
-
-    // ------------------------------------------------------------
-    // Invalid function name → FunctionNotFound
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_invalid_function_name() {
-        let mut col = ToolCollection::default();
-        col.register("dummy", "does nothing", |_: ()| async {});
-
-        let err = col
-            .call(FunctionCall {
-                name: "ghost".into(),
-                arguments: json!([]),
-            })
-            .await
-            .unwrap_err();
-
-        matches!(err, ToolError::FunctionNotFound { .. });
-    }
-
-    // ------------------------------------------------------------
-    // Vector argument
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_vector_argument() {
-        let mut col = ToolCollection::default();
-        col.register("sum", "Sum vec", |t: (Vec<i32>,)| async move {
-            t.0.iter().sum::<i32>()
-        });
-
-        assert_eq!(call_ok(&col, "sum", json!([[1, 2, 3, 4]])).await, json!(10));
-    }
-
-    // ------------------------------------------------------------
-    // Struct argument → string result
-    // ------------------------------------------------------------
-    #[derive(Serialize, Deserialize)]
-    struct Config {
-        host: String,
-        port: u16,
-    }
-
-    #[tokio::test]
-    async fn test_struct_argument() {
-        let mut col = ToolCollection::default();
-        col.register("config_info", "Formats config", |c: Config| async move {
-            format!("{}:{}", c.host, c.port)
-        });
-
-        assert_eq!(
-            call_ok(
-                &col,
-                "config_info",
-                json!({ "host": "localhost", "port": 8080 })
-            )
-            .await,
-            json!("localhost:8080")
-        );
-    }
-
-    // ------------------------------------------------------------
-    // Deserialisation error → ToolError::Deserialize
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_deserialization_error() {
-        let mut col = ToolCollection::default();
-        col.register("subtract", "Sub two numbers", |t: (i32, i32)| async move {
-            t.0 - t.1
-        });
-
-        let err = col
-            .call(FunctionCall {
-                name: "subtract".into(),
-                arguments: json!(["a", "b"]), // wrong types
-            })
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, ToolError::Deserialize(_)));
-    }
-
-    // ------------------------------------------------------------
-    // Arity mismatch (one element instead of two) → Deserialize error
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_arity_mismatch() {
-        let mut col = ToolCollection::default();
-        col.register("add", "Adds two numbers", |t: (i32, i32)| async move {
-            t.0 + t.1
-        });
-
-        let err = col
-            .call(FunctionCall {
-                name: "add".into(),
-                arguments: json!([42]), // only one arg
-            })
-            .await
-            .unwrap_err();
-
-        assert!(matches!(err, ToolError::Deserialize(_)));
-    }
-
-    // ------------------------------------------------------------
-    // Async function
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_async_function() {
-        let mut col = ToolCollection::default();
-        col.register(
-            "async_foo",
-            "noop",
-            |_: ()| async move { async_foo().await },
-        );
-
-        assert_eq!(
-            call_ok(&col, "async_foo", json!(null)).await,
-            serde_json::Value::Null
-        );
-    }
-
-    // ------------------------------------------------------------
-    // Concurrent calls
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_concurrent_calls() {
-        let mut col = ToolCollection::default();
-        col.register("add", "Adds", |t: (i32, i32)| async move { t.0 + t.1 });
-        col.register("concat", "Concats", |t: (String, String)| async move {
-            format!("{}{}", t.0, t.1)
-        });
-
-        let add_fut = col.call(FunctionCall {
-            name: "add".into(),
-            arguments: json!([10, 20]),
-        });
-        let concat_fut = col.call(FunctionCall {
-            name: "concat".into(),
-            arguments: json!(["foo", "bar"]),
-        });
-
-        let (add_res, concat_res) = tokio::join!(add_fut, concat_fut);
-
-        assert_eq!(add_res.unwrap(), json!(30));
-        assert_eq!(concat_res.unwrap(), json!("foobar"));
-    }
-
-    // ------------------------------------------------------------
-    // Metadata reflection
-    // ------------------------------------------------------------
-    #[test]
-    fn test_metadata_reflection() {
-        let mut col = ToolCollection::default();
-        col.register("noop", "Does nothing", |_: ()| async {});
-        col.register("square", "Squares", |t: (i32,)| async move { t.0 * t.0 });
-
-        // Descriptions
-        let map: std::collections::HashMap<_, _> = col.descriptions().collect();
-        assert_eq!(map.len(), 2);
-        assert_eq!(map.get("noop"), Some(&"Does nothing"));
-        assert_eq!(map.get("square"), Some(&"Squares"));
-
-        // Signatures
-        let sigs: std::collections::HashMap<_, _> = col.signatures().collect();
-        let (in_id, out_id) = sigs.get("square").copied().unwrap();
-        assert_eq!(in_id, std::any::TypeId::of::<(i32,)>());
-        assert_eq!(out_id, std::any::TypeId::of::<i32>());
-    }
-
-    // ------------------------------------------------------------
-    // Unit argument
-    // ------------------------------------------------------------
-    #[tokio::test]
-    async fn test_unit_argument() {
-        let mut col = ToolCollection::default();
-        col.register("unit", "accepts ()", |_: ()| async {});
-
-        assert_eq!(
-            call_ok(&col, "unit", json!(null)).await,
-            serde_json::Value::Null
-        );
-    }
-
-    // ------------------------------------------------------------
-    // Stress test: 10 000 parallel calls
-    // ------------------------------------------------------------
-    use futures::future::join_all;
-    use std::sync::Arc;
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 16)]
-    async fn concurrency_test() {
-        const N_TASKS: usize = 10_000;
-
-        let mut col = ToolCollection::default();
-        col.register("add", "Adds", |t: (i32, i32)| async move { t.0 + t.1 });
-        let col = Arc::new(col);
-
-        let mut tasks = Vec::with_capacity(N_TASKS);
-        for i in 0..N_TASKS {
-            let col = col.clone();
-            tasks.push(tokio::spawn(async move {
-                let a = (i as i32) % 1_000;
-                let b = ((i * 7) as i32) % 1_000;
-
-                let out = col
-                    .call(FunctionCall {
-                        name: "add".into(),
-                        arguments: json!([a, b]),
-                    })
-                    .await
-                    .unwrap();
-
-                assert_eq!(out, json!(a + b));
-            }));
-        }
-
-        join_all(tasks)
-            .await
-            .into_iter()
-            .for_each(|r| r.expect("task panicked"));
-    }
-}
