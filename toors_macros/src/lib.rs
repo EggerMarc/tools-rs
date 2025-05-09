@@ -49,14 +49,14 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 |v| Box::pin(async move {
                     /* JSON → strongly‑typed arg */
                     let arg = serde_json::from_value(v)
-                        .map_err(toors::toors_errors::DeserializationError::from)?;
+                        .map_err(toors::error::DeserializationError::from)?;
 
                     /* call the user function */
                     let out = #fn_name(arg).await;
 
                     /* back to JSON */
                     serde_json::to_value(out)
-                        .map_err(|e| toors::toors_errors::ToolError::Runtime(e.to_string()))
+                        .map_err(|e| toors::error::ToolError::Runtime(e.to_string()))
                 })
             )
         }

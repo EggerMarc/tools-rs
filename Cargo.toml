@@ -1,16 +1,39 @@
 [package]
-edition = "2024"
+edition = "2021"
 name    = "toors_core"
 version = "0.1.0"
+description = "Core functionality for the Toors tool collection system"
+authors = ["Toors Team"]
+license = "MIT"
 
 [dependencies]
 inventory    = "0.3.20"
 serde        = { version = "1.0.219", features = ["derive"] }
 serde_json   = "1.0.140"
 tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
-toors        = { path = "./toors" }
+toors        = { path = "./toors", features = [] }
 toors_macros = { path = "./toors_macros" }
+schemars     = { version = "0.8.16", optional = true }
+chrono       = "0.4.34"
 
 [workspace]
-members  = ["toors", "toors_macros", "examples"]
+members  = ["toors", "toors_macros", "toors_derive", "examples"]
 resolver = "2"
+
+[workspace.package]
+authors = ["Toors Team"]
+license = "MIT"
+repository = "https://github.com/username/toors"
+rust-version = "1.70"
+
+[features]
+default = []
+schema = ["toors/schema", "dep:schemars"]
+
+[workspace.dependencies]
+inventory    = "0.3.20"
+serde        = { version = "1.0.219", features = ["derive"] }
+serde_json   = "1.0.140"
+tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
+chrono       = "0.4.34"
+schemars     = "0.8.16"

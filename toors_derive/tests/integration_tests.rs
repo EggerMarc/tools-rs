@@ -1,20 +1,24 @@
 extern crate toors_derive;
-use toors_derive::{leg_add_field, add_field, ToolProvider};
+use toors_derive::Tool;
+use toors::Tool;
 
-#[derive(ToolProvider, Default)]
+#[derive(Tool, Default)]
+/// Test structure for tool functionality
 struct Test {
-    /// Some documentation
+    /// Some documentation for field a
     a: i32,
+    /// Documentation for field b
+    b: String,
 }
-
-#[leg_add_field]
-#[derive(Default)]
-struct AStruct;
 
 #[test]
 fn access_tools() {
     let test = Test::default();
-    let astruct = AStruct {
-        a: "Some value".to_string(),
-    };
+    let metadata = test.signature();
+    
+    // Verify the metadata contains the right information
+    assert_eq!(metadata.name, "Test");
+    assert!(metadata.description.contains("Test structure for tool functionality"));
+    assert!(metadata.signature.contains("a: i32"));
+    assert!(metadata.signature.contains("b: String"));
 }
