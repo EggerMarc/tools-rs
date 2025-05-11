@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Function Declarations JSON:");
     println!("{}", serde_json::to_string_pretty(&declarations)?);
     
-    // Example of what a request to an LLM might look like
+    //Example of what a request to an LLM might look like
     let llm_request = json!({
         "model": "gpt-4-turbo",
         "messages": [

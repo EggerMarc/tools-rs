@@ -5,8 +5,8 @@
 //! convenience functionality.
 
 pub use toors::{
+    schema::{type_to_decl, FunctionDecl, TypeName},
     FunctionCall, ToolCollection, ToolRegistration, TypeSignature,
-    schema::{FunctionDecl, TypeName, type_to_decl},
 };
 pub use toors_macros::tool;
 
@@ -25,9 +25,6 @@ pub fn function_declarations() -> serde_json::Value {
 }
 
 #[cfg(test)]
-use serde_json::json;
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -39,17 +36,18 @@ mod tests {
     }
 
     #[tokio::test]
-        async fn test_tool_macro_and_collection() {
-            let hub = collect_tools();
-        
-            let result = hub
-                .call(FunctionCall {
-                    name: "add".into(),
-                    arguments: json!((5, 7)),
-                })
-                .await
-                .unwrap();
-        
-            assert_eq!(result.to_string(), "12");
-        }
+    async fn test_tool_macro_and_collection() {
+        let hub = collect_tools();
+
+        let result = hub
+            .call(FunctionCall {
+                name: "add".into(),
+                arguments: json!((5, 7)),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.to_string(), "12");
+    }
 }
+

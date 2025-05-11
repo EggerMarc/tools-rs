@@ -41,15 +41,114 @@ pub fn type_to_decl<T: 'static>() -> TypeName<'static> {
     }
 }
 
+pub fn is_string<T: 'static>() -> bool {
+    use std::any::TypeId;
+    use std::borrow::Cow;
+    use std::ffi::{CStr, CString, OsStr, OsString};
+    use std::path::{Path, PathBuf};
+
+    let string_types = [
+        TypeId::of::<String>(),
+        TypeId::of::<str>(),
+        TypeId::of::<PathBuf>(),
+        TypeId::of::<Path>(),
+        TypeId::of::<OsString>(),
+        TypeId::of::<OsStr>(),
+        TypeId::of::<Box<str>>(),
+        TypeId::of::<Cow<'static, str>>(),
+        TypeId::of::<CString>(),
+        TypeId::of::<CStr>(),
+    ];
+
+    string_types.contains(&TypeId::of::<T>())
+}
+
+pub fn is_numeric<T: 'static>() -> bool {
+    use std::any::TypeId;
+    let numeric_types = [
+        TypeId::of::<i8>(),
+        TypeId::of::<i16>(),
+        TypeId::of::<i32>(),
+        TypeId::of::<i64>(),
+        TypeId::of::<i128>(),
+        TypeId::of::<isize>(),
+        TypeId::of::<u8>(),
+        TypeId::of::<u16>(),
+        TypeId::of::<u32>(),
+        TypeId::of::<u64>(),
+        TypeId::of::<u128>(),
+        TypeId::of::<usize>(),
+        TypeId::of::<f32>(),
+        TypeId::of::<f64>(),
+    ];
+
+    numeric_types.contains(&TypeId::of::<T>())
+}
+
+pub fn is_array<T: 'static>() -> bool {
+    (std::any::type_name::<T>().starts_with("(") && std::any::type_name::<T>().ends_with(")"))
+        || std::any::type_name::<T>().starts_with("alloc::vec::Vec<")
+}
+
+pub fn is_boolean<T: 'static>() -> bool {
+    use std::any::TypeId;
+    TypeId::of::<T>() == TypeId::of::<bool>()
+}
+
+pub fn is_null<T: 'static>() -> bool {
+    use std::any::TypeId;
+    let _ = TypeId::of::<T>() == TypeId::of::<()>();
+    unimplemented!()
+}
+
+pub fn is_struct<T: 'static>() -> bool {
+    unimplemented!()
+}
+
+#[cfg(feature = "schema")]
+/// Helper function to convert rust types to json
+pub fn rust_ty_to_json<T: 'static>() -> Option<serde_json::Value> {
+    if is_string::<T>() {
+        Some(serde_json::json!({
+            "type": "string"
+        }))
+    } else if is_numeric::<T>() {
+        Some(serde_json::json!({
+            "type": "numeric"
+        }))
+    } else if is_null::<T>() {
+        Some(serde_json::json!({
+            "type": "null"
+        }))
+    } else if is_boolean::<T>() {
+        Some(serde_json::json!({
+            "type": "boolean"
+        }))
+    } else if is_array::<T>() {
+        Some(serde_json::json!({
+            "type": "array",
+            "items": "todo"
+        }));
+        unimplemented!("Need to check array subtypes")
+    } else if is_struct::<T>() {
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": "todo"
+        }));
+        unimplemented!("Need to check struct subtypes")
+    } else {
+        None
+    }
+}
+
 #[cfg(feature = "schema")]
 /// Helper function to check if a type is supported for schema generation
 pub fn schema_for_safe<T: 'static>() -> Option<serde_json::Value> {
     // Only handle a few common types directly to avoid issues with JsonSchema
     // In a real implementation, you would add more type handling or use proper JsonSchema
-
     // This approach avoids requiring T: JsonSchema
-
     use std::any::TypeId;
+
     if TypeId::of::<T>() == TypeId::of::<String>() {
         let schema = serde_json::json!({
             "type": "string"
@@ -113,7 +212,7 @@ pub fn schema_for_safe<T: 'static>() -> Option<serde_json::Value> {
 impl<'a> TypeName<'a> {
     /// Create a new TypeName with schema from a type T
     pub fn from_type<T: 'static>() -> Self {
-        if let Some(schema) = schema_for_safe::<T>() {
+        if let Some(schema) = rust_ty_to_json::<T>() {
             TypeName::JsonSchema { schema }
         } else {
             TypeName::Rust {
@@ -142,7 +241,7 @@ mod tests {
         #[cfg(feature = "schema")]
         {
             if let TypeName::JsonSchema { schema } = type_to_decl::<i32>() {
-                assert_eq!(schema["type"], "integer");
+                assert_eq!(schema["type"], "number");
             }
         }
     }
@@ -153,5 +252,17 @@ mod tests {
         if let TypeName::Rust { rust } = decl {
             assert_eq!(rust, "(alloc::string::String, i32)");
         }
+    }
+
+    #[test]
+    fn test_numeric_types() {
+        struct Foo {
+            _a: i32,
+            _b: i32,
+        }
+        assert!(is_numeric::<i32>());
+        assert!(is_numeric::<f64>());
+        assert!(!is_numeric::<String>());
+        assert!(!is_numeric::<Foo>());
     }
 }
