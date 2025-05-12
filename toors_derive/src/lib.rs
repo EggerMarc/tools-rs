@@ -3,8 +3,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use syn::{
-    parse_macro_input, parse_quote, Data, DeriveInput, FnArg, GenericParam, ImplItem, ItemImpl,
-    Pat, ReturnType,
+    parse_macro_input, parse_quote, Data, DeriveInput, GenericParam, ItemImpl,
 };
 
 #[proc_macro_derive(Tool, attributes(doc))]

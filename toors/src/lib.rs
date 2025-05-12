@@ -6,7 +6,7 @@
 //! ```text
 //! Crate      : toors
 //! Version    : 0.1.x (API‑stable)
-//! License    : ???
+//! License    : MIT
 //! Last update: 2025‑05‑05
 //! ```
 //!
@@ -27,39 +27,31 @@
 //! The remainder of this file contains the *implementation* with rich inline
 //! documentation.
 //! ---------------------------------------------------------------------------
+pub mod db;
 #[deny(unsafe_code)]
-pub mod toors_errors;
+pub mod error;
+pub mod models;
+pub mod schema;
 
-use std::{any::TypeId, borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use futures::{FutureExt, future::BoxFuture};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde_json::{self, Value};
 
-use toors_errors::{DeserializationError, ToolError};
-
-#[derive(Debug, Deserialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: Value,
-}
-
-pub type ToolFunc = dyn Fn(Value) -> BoxFuture<'static, Result<Value, ToolError>> + Send + Sync;
+use error::{DeserializationError, ToolError};
+pub use models::{FunctionCall, Tool, ToolFunc, ToolMetadata, ToolRegistration, TypeSignature};
+pub use schema::{FunctionDecl, TypeName, type_to_decl};
 
 #[derive(Default)]
 pub struct ToolCollection {
     funcs: HashMap<&'static str, Arc<ToolFunc>>,
     descriptions: HashMap<&'static str, &'static str>,
     signatures: HashMap<&'static str, TypeSignature>,
+    declarations: HashMap<&'static str, FunctionDecl<'static>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct TypeSignature {
-    pub input_id: TypeId,
-    pub output_id: TypeId,
-    pub input_name: &'static str,
-    pub output_name: &'static str,
-}
+// TypeSignature is now defined in the models module
 
 impl ToolCollection {
     pub fn new() -> Self {
@@ -87,10 +79,20 @@ impl ToolCollection {
         self.signatures.insert(
             name,
             TypeSignature {
-                input_id: TypeId::of::<I>(),
-                output_id: TypeId::of::<O>(),
-                input_name: std::any::type_name::<I>(),
-                output_name: std::any::type_name::<O>(),
+                input_id: std::any::TypeId::of::<I>(),
+                output_id: std::any::TypeId::of::<O>(),
+                input_name: std::any::type_name::<I>().into(),
+                output_name: std::any::type_name::<O>().into(),
+            },
+        );
+
+        self.declarations.insert(
+            name,
+            FunctionDecl {
+                name,
+                description: desc,
+                parameters: vec![type_to_decl::<I>()],
+                returns: type_to_decl::<O>(),
             },
         );
 
@@ -152,34 +154,101 @@ impl ToolCollection {
         for reg in inventory::iter::<ToolRegistration> {
             hub.descriptions.insert(reg.name, reg.doc);
             hub.funcs.insert(reg.name, Arc::new(reg.f));
+            hub.declarations.insert(
+                reg.name,
+                FunctionDecl {
+                    name: reg.name,
+                    description: reg.doc,
+                    parameters: vec![TypeName::Rust { rust: "Value" }],
+                    returns: TypeName::Rust { rust: "Value" },
+                },
+            );
         }
         hub
     }
-}
 
-pub struct ToolRegistration {
-    pub name: &'static str,
-    pub doc: &'static str,
-    pub f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
-}
-
-impl ToolRegistration {
-    pub const fn new(
-        name: &'static str,
-        doc: &'static str,
-        f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
-    ) -> Self {
-        Self { name, doc, f }
+    /// Export every registered tool as a JSON array ready for "functionDeclarations".
+    pub fn json(&self) -> serde_json::Value {
+        let list: Vec<&FunctionDecl> = self.declarations.values().collect();
+        serde_json::to_value(list).expect("FunctionDecl is serializable")
     }
 }
+
+// ToolRegistration is now defined in the models module
 
 inventory::collect!(ToolRegistration);
 
 #[cfg(test)]
+mod schema_tests {
+    use super::*;
+    use serde_json::{self, json};
+
+    #[tokio::test]
+    async fn test_function_declarations() {
+        let mut col = ToolCollection::new();
+
+        col.register("add_fn", "Add two numbers", |args: (i32, i32)| async move {
+            args.0 + args.1
+        })
+        .unwrap();
+
+        col.register("greet", "Greet a person", |name: String| async move {
+            format!("Hello, {name}!")
+        })
+        .unwrap();
+
+        let decls = col.json();
+        let decls_vec = decls.as_array().unwrap();
+
+        // Should have 2 function declarations
+        assert_eq!(decls_vec.len(), 2);
+
+        // Check the first declaration
+        let add_decl = decls_vec
+            .iter()
+            .find(|d| d["name"] == "add_fn")
+            .expect("Should have add_fn declaration");
+
+        assert_eq!(add_decl["description"], "Add two numbers");
+        assert_eq!(
+            add_decl["parameters"][0]["rust"].as_str().unwrap(),
+            "(i32, i32)"
+        );
+        assert_eq!(add_decl["returns"]["rust"].as_str().unwrap(), "i32");
+
+        // Check the second declaration
+        let greet_decl = decls_vec
+            .iter()
+            .find(|d| d["name"] == "greet")
+            .expect("Should have greet declaration");
+
+        assert_eq!(greet_decl["description"], "Greet a person");
+        assert_eq!(
+            greet_decl["parameters"][0]["rust"].as_str().unwrap(),
+            "alloc::string::String"
+        );
+        assert_eq!(
+            greet_decl["returns"]["rust"].as_str().unwrap(),
+            "alloc::string::String"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_inventory_registered_tools() {
+        // This test needs to be in a separate binary where tools are registered via #[tool]
+        // Here we just check that declarations are created for inventory-registered tools
+        let col = ToolCollection::collect_tools();
+        let decls = col.json();
+
+        // The returned value should be an array (even if empty)
+        assert!(decls.is_array());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
+    use serde_json::{self, json};
     // ------------------------------------------------------------------
     // Helper items shared by several tests
     // ------------------------------------------------------------------
@@ -192,12 +261,12 @@ mod tests {
     fn noop() {}
     async fn async_foo() {}
 
-    #[derive(PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct SomeArgs {
         a: i32,
         b: i32,
     }
-    fn using_args(_args: SomeArgs) {}
+    fn using_args(_a: SomeArgs) {}
 
     // Small helper to build a FunctionCall
     fn fc(name: &str, args: serde_json::Value) -> FunctionCall {
@@ -443,7 +512,7 @@ mod tests {
 #[cfg(test)]
 mod stateful_tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{self, json};
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},

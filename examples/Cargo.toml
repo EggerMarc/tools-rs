@@ -1,20 +1,33 @@
 [package]
 name = "examples"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+description = "Examples for the toors crate"
 
-[dev-dependencies]
-toors={path="../toors"}
-toors_derive={path="../toors_derive"}
+[dependencies]
+toors_core = { path = "..", features = ["schema"] }
+toors = { path = "../toors", features = ["schema"] }
+toors_macros = { path = "../toors_macros" }
+toors_derive = { path = "../toors_derive" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+chrono = "0.4"
+schemars = "0.8.16"
+inventory = "0.3.20"
 
 [[example]]
-name="db"
-path="db.rs"
+name = "basic"
+path = "basic/main.rs"
 
 [[example]]
-name="in_struct"
-path="in_struct.rs"
+name = "example"
+path = "example.rs"
 
 [[example]]
-name="example"
-path="example.rs"
+name = "function_declarations"
+path = "function_declarations/main.rs"
+
+[[example]]
+name = "schema"
+path = "schema/main.rs"

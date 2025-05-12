@@ -1,6 +1,5 @@
 use serde_json::json;
-use toors::{FunctionCall, ToolCollection};
-use toors_macros::tool;
+use toors_core::{collect_tools, FunctionCall, tool};
 
 #[tool]
 /// Adds two numbers.
@@ -16,7 +15,7 @@ async fn greet(name: String) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let hub = ToolCollection::collect_tools();
+    let hub = collect_tools();
 
     let sum = hub
         .call(FunctionCall {
