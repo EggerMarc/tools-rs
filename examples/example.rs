@@ -1,3 +1,5 @@
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use toors_core::{FunctionCall, collect_tools, tool};
@@ -8,6 +10,7 @@ async fn add(pair: (i32, i32)) -> i32 {
     pair.0 + pair.1
 }
 
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize)]
 struct CalculateRequest {
     operation: String,

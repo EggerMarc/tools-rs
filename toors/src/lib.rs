@@ -13,7 +13,6 @@
 #[cfg(feature = "schema")]
 extern crate schemars;
 
-pub mod db;
 pub mod error;
 pub mod models;
 pub mod schema;

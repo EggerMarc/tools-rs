@@ -1,5 +1,9 @@
+//! toors_basic.rs – minimal demo that matches the new Toors
+//! wrapper-struct convention (each parameter lives in a JSON object whose
+//! keys equal the Rust argument names).
+
 use serde_json::json;
-use toors_core::{collect_tools, FunctionCall, tool};
+use toors_core::{FunctionCall, collect_tools, tool};
 
 #[tool]
 /// Adds two numbers.
@@ -14,21 +18,18 @@ async fn greet(name: String) -> String {
 }
 
 #[tool]
-/// Calculates the fibonacci number at the given position.
+/// Calculates the Fibonacci number at the given position.
 async fn fibonacci(n: u32) -> u64 {
     match n {
         0 => 0,
         1 | 2 => 1,
         n => {
-            let mut a = 0u64;
-            let mut b = 1u64;
-            
+            let (mut a, mut b) = (0, 1);
             for _ in 2..=n {
-                let temp = a + b;
+                let tmp = a + b;
                 a = b;
-                b = temp;
+                b = tmp;
             }
-            
             b
         }
     }
@@ -36,43 +37,50 @@ async fn fibonacci(n: u32) -> u64 {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Toors Basic Example");
-    println!("===================");
-    
+    println!("Toors Basic Example\n===================");
+
     let hub = collect_tools();
-    
-    // Example 1: Add two numbers
+
+    // ------------------------------------------------------------------
+    // 1. add(3, 4)   — JSON key must match the parameter name `pair`
+    // ------------------------------------------------------------------
     let sum = hub
         .call(FunctionCall {
             name: "add".into(),
-            arguments: json!([3, 4]),
+            arguments: json!({ "pair": [3, 4] }),
         })
         .await?;
     println!("add(3, 4) → {sum}");
-    
-    // Example 2: Greet a person
+
+    // ------------------------------------------------------------------
+    // 2. greet("World")  — key is `name`
+    // ------------------------------------------------------------------
     let greeting = hub
         .call(FunctionCall {
             name: "greet".into(),
-            arguments: json!("World"),
+            arguments: json!({ "name": "World" }),
         })
         .await?;
     println!("greet(\"World\") → {greeting}");
-    
-    // Example 3: Calculate fibonacci
+
+    // ------------------------------------------------------------------
+    // 3. fibonacci(10)   — key is `n`
+    // ------------------------------------------------------------------
     let fib = hub
         .call(FunctionCall {
             name: "fibonacci".into(),
-            arguments: json!(10),
+            arguments: json!({ "n": 10 }),
         })
         .await?;
     println!("fibonacci(10) → {fib}");
-    
-    // List all available tools
+
+    // ------------------------------------------------------------------
+    // Available tools
+    // ------------------------------------------------------------------
     println!("\nAvailable tools:");
     for (name, description) in hub.descriptions() {
         println!("  - {name}: {description}");
     }
-    
+
     Ok(())
 }
