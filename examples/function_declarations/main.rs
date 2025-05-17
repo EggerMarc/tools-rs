@@ -1,36 +1,18 @@
+//! demo_fixed.rs – corrected minimal demo for **Toors**
+
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use toors_core::{collect_tools, function_declarations, tool, FunctionCall};
+use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
 
-#[tool]
-/// Return the current date in ISO-8601 format.
-async fn today(_: ()) -> String {
-    use chrono::Utc;
-    Utc::now().date_naive().to_string()
-}
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
 
-#[tool]
-/// Calculate the factorial of a number.
-async fn factorial(n: u64) -> u64 {
-    let mut result = 1;
-    for i in 2..=n {
-        result *= i;
-    }
-    result
-}
+// ─────────────────────────────────────────────────────────────
+// Domain types
+// ─────────────────────────────────────────────────────────────
 
-#[tool]
-/// Get weather information for a location.
-async fn weather(location: String) -> WeatherInfo {
-    // In a real implementation, this would call a weather API
-    WeatherInfo {
-        location,
-        temperature: 22.5,
-        conditions: "Sunny".to_string(),
-        humidity: 45,
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Serialize, Deserialize, Debug)]
 struct WeatherInfo {
     location: String,
     temperature: f32,
@@ -38,54 +20,88 @@ struct WeatherInfo {
     humidity: u8,
 }
 
+// ─────────────────────────────────────────────────────────────
+// Tools
+// ─────────────────────────────────────────────────────────────
+
+#[tool]
+/// Return today’s date in ISO-8601 (`YYYY-MM-DD`) format.
+async fn today() -> String {
+    chrono::Utc::now().date_naive().to_string()
+}
+
+#[tool]
+/// Calculate the factorial of an integer `n` (`0! = 1`).
+async fn factorial(n: u64) -> u64 {
+    (1..=n).product()
+}
+
+#[tool]
+/// Fake weather report for a given location.
+async fn weather(location: String) -> WeatherInfo {
+    WeatherInfo {
+        location,
+        temperature: 22.5,
+        conditions: "Sunny".into(),
+        humidity: 45,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Driver
+// ─────────────────────────────────────────────────────────────
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Collect all tools registered with the #[tool] macro
+    // 1. compile-time inventory → runtime registry
     let tools = collect_tools();
-    
-    // Generate function declarations for an LLM
-    let declarations = function_declarations();
-    
-    println!("Function Declarations JSON:");
-    println!("{}", serde_json::to_string_pretty(&declarations)?);
-    
-    //Example of what a request to an LLM might look like
-    let llm_request = json!({
-        "model": "gpt-4-turbo",
+
+    // 2. declarations for the LLM
+    let decls = function_declarations();
+    println!("=== Function Declarations ===");
+    println!("{}", serde_json::to_string_pretty(&decls)?);
+
+    // 3. sketch of a chat request (OpenAI style: `tools` array)
+    let chat_request = json!({
+        "model": "gpt-4o",
         "messages": [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant with access to function calling."
-            },
-            {
-                "role": "user",
-                "content": "What's today's date and what's the factorial of 5?"
-            }
+            { "role": "system",
+              "content": "You are a helpful assistant with tool access." },
+            { "role": "user",
+              "content": "What's today's date and what's the factorial of 5?" }
         ],
-        "functionDeclarations": declarations
+        "tool_choice": "auto",
+        "tools": decls
     });
-    
-    println!("\nExample LLM Request:");
-    println!("{}", serde_json::to_string_pretty(&llm_request)?);
-    
-    // Example of calling a tool
-    println!("\nExecuting 'today' tool:");
-    let result = tools
+    println!("\n=== Example LLM Request ===");
+    println!("{}", serde_json::to_string_pretty(&chat_request)?);
+
+    // 4. call `today`
+    let date = tools
         .call(FunctionCall {
             name: "today".into(),
-            arguments: json!(()),
+            arguments: json!({}), // empty object → no parameters
         })
         .await?;
-    println!("Today's date: {}", result);
-    
-    println!("\nExecuting 'factorial' tool:");
-    let result = tools
+    println!("\nToday  : {date}");
+
+    // 5. call `factorial`
+    let fact = tools
         .call(FunctionCall {
             name: "factorial".into(),
-            arguments: json!(5),
+            arguments: json!({ "n": 5 }), // key == parameter name
         })
         .await?;
-    println!("Factorial of 5: {}", result);
-    
+    println!("5!     : {fact}");
+
+    // 6. call `weather`
+    let meteo = tools
+        .call(FunctionCall {
+            name: "weather".into(),
+            arguments: json!({ "location": "London" }),
+        })
+        .await?;
+    println!("Weather: {meteo}");
+
     Ok(())
 }

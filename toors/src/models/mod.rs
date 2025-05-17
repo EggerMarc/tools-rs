@@ -2,11 +2,11 @@
 //!
 //! This module contains the core data structures used by the toors library.
 
-use std::any::TypeId;
-use std::borrow::Cow;
+use futures::future::BoxFuture;
 use serde::Deserialize;
 use serde_json::Value;
-use futures::future::BoxFuture;
+use std::any::TypeId;
+use std::borrow::Cow;
 
 use crate::error::ToolError;
 
@@ -25,7 +25,7 @@ pub struct ToolMetadata {
 pub trait Tool {
     /// Get the description of the tool
     fn description(&self) -> &'static str;
-    
+
     /// Get the metadata for the tool
     fn signature(&self) -> ToolMetadata;
 }
@@ -55,24 +55,33 @@ pub struct TypeSignature {
     pub output_name: Cow<'static, str>,
 }
 
-/// Tool registration information
-#[derive(Debug)]
 pub struct ToolRegistration {
-    /// Name of the tool
+    /// Symbolic tool name
     pub name: &'static str,
-    /// Documentation for the tool
+    /// Doc-string shown to the LLM
     pub doc: &'static str,
-    /// The function implementing the tool
+    /// Async wrapper  (JSON in → JSON out)
     pub f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
+    /// Zero-arg closure returning the *parameter* JSON-Schema
+    pub param_schema: fn() -> Value,
+    /// Zero-arg closure returning the *return type* JSON-Schema
+    pub return_schema: fn() -> Value,
 }
 
 impl ToolRegistration {
-    /// Creates a new tool registration
     pub const fn new(
         name: &'static str,
         doc: &'static str,
         f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
+        param_schema: fn() -> Value,
+        return_schema: fn() -> Value,
     ) -> Self {
-        Self { name, doc, f }
+        Self {
+            name,
+            doc,
+            f,
+            param_schema,
+            return_schema,
+        }
     }
 }

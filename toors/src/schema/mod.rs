@@ -1,268 +1,33 @@
-//! Schema definitions for tool declarations
-//!
-//! This module contains types used to describe tool declarations in a format
-//! that can be serialized to JSON and provided to LLMs.
-
 use serde::Serialize;
-#[cfg(feature = "schema")]
-use serde_json;
+use serde_json::Value;
 
-/// Minimal, always-available description of a function
+#[cfg(feature = "schema")]
+use schemars::{JsonSchema, schema_for};
+
+/// Return the JSON-Schema of `T` as a plain `serde_json::Value`.
+///
+/// When the `schema` feature is **disabled**, this always returns `null`.
+#[inline]
+#[cfg(feature = "schema")]
+pub fn schema_to_json_schema<T>() -> Value
+where
+    T: JsonSchema + ?Sized,
+{
+    let root = schema_for!(T); // schemars ⇒ RootSchema
+    serde_json::to_value(root.schema).expect("serialising RootSchema never fails")
+}
+
+#[inline]
+#[cfg(not(feature = "schema"))]
+pub fn schema_to_json_schema<T>() -> Value {
+    Value::Null
+}
+
+/// `FunctionDecl` – metadata emitted by the runtime for each registered tool.
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionDecl<'a> {
-    /// The name of the function
     pub name: &'a str,
-    /// A description of what the function does
     pub description: &'a str,
-    /// Parameter types for the function
-    pub parameters: Vec<TypeName<'a>>,
-    /// Return type of the function
-    pub returns: TypeName<'a>,
-}
-
-/// Stringified Rust type; upgraded to JSON-Schema when the `schema` feature is enabled.
-#[derive(Debug, Clone, Serialize)]
-#[serde(untagged)]
-pub enum TypeName<'a> {
-    /// Basic Rust type name representation
-    Rust { rust: &'a str },
-
-    /// JSON Schema representation (available with the `schema` feature)
-    #[cfg(feature = "schema")]
-    JsonSchema { schema: serde_json::Value },
-}
-
-/// Converts a type to its schema representation
-#[cfg(not(feature = "schema"))]
-pub fn type_to_decl<T: 'static>() -> TypeName<'static> {
-    // Default implementation returns the Rust type name
-    TypeName::Rust {
-        rust: std::any::type_name::<T>(),
-    }
-}
-
-pub fn is_string<T: 'static>() -> bool {
-    use std::any::TypeId;
-    use std::borrow::Cow;
-    use std::ffi::{CStr, CString, OsStr, OsString};
-    use std::path::{Path, PathBuf};
-
-    let string_types = [
-        TypeId::of::<String>(),
-        TypeId::of::<str>(),
-        TypeId::of::<PathBuf>(),
-        TypeId::of::<Path>(),
-        TypeId::of::<OsString>(),
-        TypeId::of::<OsStr>(),
-        TypeId::of::<Box<str>>(),
-        TypeId::of::<Cow<'static, str>>(),
-        TypeId::of::<CString>(),
-        TypeId::of::<CStr>(),
-    ];
-
-    string_types.contains(&TypeId::of::<T>())
-}
-
-pub fn is_numeric<T: 'static>() -> bool {
-    use std::any::TypeId;
-    let numeric_types = [
-        TypeId::of::<i8>(),
-        TypeId::of::<i16>(),
-        TypeId::of::<i32>(),
-        TypeId::of::<i64>(),
-        TypeId::of::<i128>(),
-        TypeId::of::<isize>(),
-        TypeId::of::<u8>(),
-        TypeId::of::<u16>(),
-        TypeId::of::<u32>(),
-        TypeId::of::<u64>(),
-        TypeId::of::<u128>(),
-        TypeId::of::<usize>(),
-        TypeId::of::<f32>(),
-        TypeId::of::<f64>(),
-    ];
-
-    numeric_types.contains(&TypeId::of::<T>())
-}
-
-pub fn is_array<T: 'static>() -> bool {
-    (std::any::type_name::<T>().starts_with("(") && std::any::type_name::<T>().ends_with(")"))
-        || std::any::type_name::<T>().starts_with("alloc::vec::Vec<")
-}
-
-pub fn is_boolean<T: 'static>() -> bool {
-    use std::any::TypeId;
-    TypeId::of::<T>() == TypeId::of::<bool>()
-}
-
-pub fn is_null<T: 'static>() -> bool {
-    use std::any::TypeId;
-    let _ = TypeId::of::<T>() == TypeId::of::<()>();
-    unimplemented!()
-}
-
-pub fn is_struct<T: 'static>() -> bool {
-    unimplemented!()
-}
-
-#[cfg(feature = "schema")]
-/// Helper function to convert rust types to json
-pub fn rust_ty_to_json<T: 'static>() -> Option<serde_json::Value> {
-    if is_string::<T>() {
-        Some(serde_json::json!({
-            "type": "string"
-        }))
-    } else if is_numeric::<T>() {
-        Some(serde_json::json!({
-            "type": "numeric"
-        }))
-    } else if is_null::<T>() {
-        Some(serde_json::json!({
-            "type": "null"
-        }))
-    } else if is_boolean::<T>() {
-        Some(serde_json::json!({
-            "type": "boolean"
-        }))
-    } else if is_array::<T>() {
-        Some(serde_json::json!({
-            "type": "array",
-            "items": "todo"
-        }));
-        unimplemented!("Need to check array subtypes")
-    } else if is_struct::<T>() {
-        Some(serde_json::json!({
-            "type": "object",
-            "properties": "todo"
-        }));
-        unimplemented!("Need to check struct subtypes")
-    } else {
-        None
-    }
-}
-
-#[cfg(feature = "schema")]
-/// Helper function to check if a type is supported for schema generation
-pub fn schema_for_safe<T: 'static>() -> Option<serde_json::Value> {
-    // Only handle a few common types directly to avoid issues with JsonSchema
-    // In a real implementation, you would add more type handling or use proper JsonSchema
-    // This approach avoids requiring T: JsonSchema
-    use std::any::TypeId;
-
-    if TypeId::of::<T>() == TypeId::of::<String>() {
-        let schema = serde_json::json!({
-            "type": "string"
-        });
-        Some(schema)
-    } else if TypeId::of::<T>() == TypeId::of::<i32>() {
-        let schema = serde_json::json!({
-            "type": "integer",
-            "format": "int32"
-        });
-        Some(schema)
-    } else if TypeId::of::<T>() == TypeId::of::<f64>() {
-        let schema = serde_json::json!({
-            "type": "number",
-            "format": "double"
-        });
-        Some(schema)
-    } else if TypeId::of::<T>() == TypeId::of::<bool>() {
-        let schema = serde_json::json!({
-            "type": "boolean"
-        });
-        Some(schema)
-    } else if TypeId::of::<T>() == TypeId::of::<()>() {
-        let schema = serde_json::json!({
-            "type": "null"
-        });
-        Some(schema)
-    } else if std::any::type_name::<T>().starts_with("(")
-        && std::any::type_name::<T>().ends_with(")")
-    {
-        // Basic tuple handling
-        let schema = serde_json::json!({
-            "type": "array",
-            "description": std::any::type_name::<T>()
-        });
-        Some(schema)
-    } else if std::any::type_name::<T>().starts_with("alloc::vec::Vec<") {
-        // Basic vector handling
-        let schema = serde_json::json!({
-            "type": "array",
-            "description": std::any::type_name::<T>()
-        });
-        Some(schema)
-    } else if std::any::type_name::<T>().starts_with("alloc::string::String") {
-        // Handle String explicitly
-        let schema = serde_json::json!({
-            "type": "string"
-        });
-        Some(schema)
-    } else {
-        // For other types, just return a generic object schema with the type name
-        let schema = serde_json::json!({
-            "type": "object",
-            "description": std::any::type_name::<T>()
-        });
-        Some(schema)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl<'a> TypeName<'a> {
-    /// Create a new TypeName with schema from a type T
-    pub fn from_type<T: 'static>() -> Self {
-        if let Some(schema) = rust_ty_to_json::<T>() {
-            TypeName::JsonSchema { schema }
-        } else {
-            TypeName::Rust {
-                rust: std::any::type_name::<T>(),
-            }
-        }
-    }
-}
-
-#[cfg(feature = "schema")]
-/// Override for type_to_decl when schema feature is enabled
-pub fn type_to_decl<T: 'static>() -> TypeName<'static> {
-    TypeName::from_type::<T>()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_type_to_decl_primitive() {
-        let decl = type_to_decl::<i32>();
-        if let TypeName::Rust { rust } = decl {
-            assert_eq!(rust, "i32");
-        }
-        #[cfg(feature = "schema")]
-        {
-            if let TypeName::JsonSchema { schema } = type_to_decl::<i32>() {
-                assert_eq!(schema["type"], "number");
-            }
-        }
-    }
-
-    #[test]
-    fn test_type_to_decl_tuple() {
-        let decl = type_to_decl::<(String, i32)>();
-        if let TypeName::Rust { rust } = decl {
-            assert_eq!(rust, "(alloc::string::String, i32)");
-        }
-    }
-
-    #[test]
-    fn test_numeric_types() {
-        struct Foo {
-            _a: i32,
-            _b: i32,
-        }
-        assert!(is_numeric::<i32>());
-        assert!(is_numeric::<f64>());
-        assert!(!is_numeric::<String>());
-        assert!(!is_numeric::<Foo>());
-    }
+    pub parameters: Value,
+    pub returns: Value,
 }

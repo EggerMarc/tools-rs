@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use toors_core::{collect_tools, tool, FunctionCall};
+use toors_core::{FunctionCall, collect_tools, tool};
 
 #[tool]
 /// Adds two numbers.
@@ -30,55 +30,56 @@ async fn calculate(req: CalculateRequest) -> f64 {
 #[tool]
 /// Gets weather information for a location.
 async fn get_weather(location: String) -> String {
-    format!("Weather for {}: 22°C, Sunny", location)
+    format!("Weather for {}: 22 °C, Sunny", location)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Collect all registered tools
     let tools = collect_tools();
-    
-    // List all available tools
+
     println!("Available tools:");
     for (name, description) in tools.descriptions() {
         println!("  - {}: {}", name, description);
     }
-    
-    // Call the add function
-    let result = tools
+
+    // ------ add ----------------------------------------------------------
+    let sum = tools
         .call(FunctionCall {
             name: "add".into(),
-            arguments: json!((5, 7)),
+            arguments: json!({ "pair": [5, 7] }), //  👈  field name = pair
         })
         .await?;
-    println!("\nAdd result: {}", result);
-    
-    // Call the calculate function
-    let result = tools
+    println!("\nAdd result: {}", sum);
+
+    // ------ calculate ----------------------------------------------------
+    let calc = tools
         .call(FunctionCall {
             name: "calculate".into(),
             arguments: json!({
-                "operation": "multiply", 
-                "a": 3.5, 
-                "b": 2.0
+                "req": {                     // 👈  field name = req
+                    "operation": "multiply",
+                    "a": 3.5,
+                    "b": 2.0
+                }
             }),
         })
         .await?;
-    println!("Calculate result: {}", result);
-    
-    // Call the weather function
-    let result = tools
+    println!("Calculate result: {}", calc);
+
+    // ------ get_weather --------------------------------------------------
+    let weather = tools
         .call(FunctionCall {
             name: "get_weather".into(),
-            arguments: json!("London"),
+            arguments: json!({ "location": "London" }), // 👈  field name = location
         })
         .await?;
-    println!("Weather result: {}", result);
-    
-    // Export function declarations
-    let declarations = tools.json();
-    println!("\nFunction declarations:");
-    println!("{}", serde_json::to_string_pretty(&declarations)?);
-    
+    println!("Weather result: {}", weather);
+
+    // Optional: dump the declarations
+    println!(
+        "\nFunction declarations:\n{}",
+        serde_json::to_string_pretty(&tools.json())?
+    );
+
     Ok(())
 }

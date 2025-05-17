@@ -1,15 +1,37 @@
+//! demo.rs – End-to-end demo for **Toors**
+//!
+//! *With JSON-Schema*  
+//! ```bash
+//! cargo run --example demo --features schema
+//! ```
+//!
+//! *Without JSON-Schema* (smaller binary; schemas become `null`)  
+//! ```bash
+//! cargo run --example demo
+//! ```
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::error::Error;
 use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
 
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Domain types
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, Debug)]
 struct Person {
     name: String,
     age: u32,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hobbies: Vec<String>,
 }
 
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, Debug)]
 struct SearchRequest {
     query: String,
@@ -17,13 +39,22 @@ struct SearchRequest {
     filters: SearchFilters,
 }
 
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, Debug)]
 struct SearchFilters {
     categories: Vec<String>,
     min_rating: Option<f32>,
-    date_range: Option<(String, String)>,
+    date_range: Option<DateRange>,
 }
 
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[derive(Serialize, Deserialize, Debug)]
+struct DateRange {
+    start: String,
+    end: String,
+}
+
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, Debug)]
 struct SearchResult {
     title: String,
@@ -32,116 +63,109 @@ struct SearchResult {
     rating: f32,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tools exposed to the LLM
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[tool]
-/// Create a new person with the given properties
+/// Create a new person and return it.
 async fn create_person(person: Person) -> Person {
-    // In a real implementation, this might save to a database
-    println!("Created person: {:?}", person);
+    println!("Created person: {person:?}");
     person
 }
 
 #[tool]
-/// Search for resources matching the criteria
+/// Search for resources matching the criteria.
 async fn search(request: SearchRequest) -> Vec<SearchResult> {
-    println!("Searching for: {:?}", request);
-
-    // In a real implementation, this would perform a search
-    // Here we just return sample data
+    println!("Searching for: {request:?}");
     vec![
         SearchResult {
             title: format!("Result for '{}'", request.query),
-            url: "https://example.com/result1".to_string(),
-            description: "This is a sample search result".to_string(),
+            url: "https://example.com/result1".into(),
+            description: "Sample search result".into(),
             rating: 4.5,
         },
         SearchResult {
             title: format!("Another result for '{}'", request.query),
-            url: "https://example.com/result2".to_string(),
-            description: "This is another sample result".to_string(),
+            url: "https://example.com/result2".into(),
+            description: "Another sample search result".into(),
             rating: 3.8,
         },
     ]
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Driver
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Collect all tools registered with the #[tool] macro
+async fn main() -> Result<(), Box<dyn Error>> {
+    // 1. Compile-time inventory  →  runtime registry
     let tools = collect_tools();
 
-    // Generate function declarations with full JSON Schema (when schema feature is enabled)
+    // 2. JSON function declarations
     let declarations = function_declarations();
-
-    print!("{declarations}");
-
-    println!("Function Declarations JSON (with schema):");
+    println!("=== Function Declarations ===");
     println!("{}", serde_json::to_string_pretty(&declarations)?);
 
-    // Example of what a request to an OpenAI API might look like
-    let openai_request = json!({
-        "model": "gpt-4-turbo",
+    // 3. Skeleton of a Chat API request (OpenAI style)
+    let tools_field = declarations
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| json!({ "type": "function", "function": f }))
+        .collect::<Vec<_>>();
+
+    let chat_request = json!({
+        "model": "gpt-4o",
         "messages": [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant with access to function calling."
-            },
-            {
-                "role": "user",
-                "content": "Create a person named Alice who is 30 years old and likes reading and hiking."
-            }
+            { "role": "system",
+              "content": "You are a helpful assistant with tool access." },
+            { "role": "user",
+              "content": "Create a person named Alice who is 30 years old and likes reading and hiking." }
         ],
         "tool_choice": "auto",
-        "tools": [
-            {
-                "type": "function",
-                "function": declarations.as_array().unwrap()[0]
-            },
-            {
-                "type": "function",
-                "function": declarations.as_array().unwrap()[1]
-            }
-        ]
+        "tools": tools_field
     });
+    println!("\n=== Example Chat Request ===");
+    println!("{}", serde_json::to_string_pretty(&chat_request)?);
 
-    println!("\nExample OpenAI API Request:");
-    println!("{}", serde_json::to_string_pretty(&openai_request)?);
-
-    // Example of calling a tool
-    println!("\nExecuting 'create_person' tool:");
-    let person = Person {
-        name: "Alice".to_string(),
+    // 4. Direct invocation of `create_person`
+    let alice = Person {
+        name: "Alice".into(),
         age: 30,
-        hobbies: vec!["reading".to_string(), "hiking".to_string()],
+        hobbies: vec!["reading".into(), "hiking".into()],
     };
 
-    let result = tools
+    let created = tools
         .call(FunctionCall {
             name: "create_person".into(),
-            arguments: json!(person),
+            arguments: json!({ "person": alice }),
         })
         .await?;
+    println!("\nCreated person (runtime): {created}");
 
-    println!("Created person result: {}", result);
-
-    // Example of calling search tool
-    println!("\nExecuting 'search' tool:");
-    let search_request = SearchRequest {
-        query: "rust programming".to_string(),
+    // 5. Direct invocation of `search`
+    let req = SearchRequest {
+        query: "rust programming".into(),
         max_results: Some(5),
         filters: SearchFilters {
-            categories: vec!["programming".to_string(), "technology".to_string()],
+            categories: vec!["programming".into(), "technology".into()],
             min_rating: Some(4.0),
-            date_range: Some(("2023-01-01".to_string(), "2023-12-31".to_string())),
+            date_range: Some(DateRange {
+                start: "2024-01-01".into(),
+                end: "2024-12-31".into(),
+            }),
         },
     };
 
-    let result = tools
+    let results = tools
         .call(FunctionCall {
             name: "search".into(),
-            arguments: json!(search_request),
+            arguments: json!({ "request": req }),
         })
         .await?;
-
-    println!("Search results: {}", result);
+    println!("\nSearch results (runtime): {results}");
 
     Ok(())
 }
