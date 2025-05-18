@@ -1,7 +1,7 @@
 //! demo_fixed.rs – corrected minimal demo for **Toors**
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value as JsonValue, json};
 use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
 
 #[cfg(feature = "schema")]
@@ -56,8 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. compile-time inventory → runtime registry
     let tools = collect_tools();
 
-    // 2. declarations for the LLM
-    let decls = function_declarations();
+    // 2. declarations for the LLM (may fail → bubble up)
+    let decls: JsonValue = function_declarations()?; // ◀ was bare Value
+
     println!("=== Function Declarations ===");
     println!("{}", serde_json::to_string_pretty(&decls)?);
 
@@ -71,8 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
               "content": "What's today's date and what's the factorial of 5?" }
         ],
         "tool_choice": "auto",
-        "tools": decls
+        "tools": decls                               // still the same JSON value
     });
+
     println!("\n=== Example LLM Request ===");
     println!("{}", serde_json::to_string_pretty(&chat_request)?);
 
@@ -80,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let date = tools
         .call(FunctionCall {
             name: "today".into(),
-            arguments: json!({}), // empty object → no parameters
+            arguments: json!({}),
         })
         .await?;
     println!("\nToday  : {date}");
@@ -89,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fact = tools
         .call(FunctionCall {
             name: "factorial".into(),
-            arguments: json!({ "n": 5 }), // key == parameter name
+            arguments: json!({ "n": 5 }),
         })
         .await?;
     println!("5!     : {fact}");

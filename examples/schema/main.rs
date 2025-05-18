@@ -1,17 +1,17 @@
-//! demo.rs – End-to-end demo for **Toors**
+//! main.rs – End-to-end demo for **Toors**
 //!
 //! *With JSON-Schema*  
 //! ```bash
-//! cargo run --example demo --features schema
+//! cargo run --example schema --features schema
 //! ```
 //!
 //! *Without JSON-Schema* (smaller binary; schemas become `null`)  
 //! ```bash
-//! cargo run --example demo
+//! cargo run --example schema
 //! ```
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value as JsonValue, json};
 use std::error::Error;
 use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
 
@@ -100,21 +100,24 @@ async fn search(request: SearchRequest) -> Vec<SearchResult> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // 1. Compile-time inventory  →  runtime registry
+    // 1. Compile-time inventory → runtime registry
     let tools = collect_tools();
 
-    // 2. JSON function declarations
-    let declarations = function_declarations();
+    // 2. JSON function declarations (may fail → bubble up)
+    let declarations: JsonValue = function_declarations()?; // ◀ was plain Value
+
     println!("=== Function Declarations ===");
     println!("{}", serde_json::to_string_pretty(&declarations)?);
 
-    // 3. Skeleton of a Chat API request (OpenAI style)
-    let tools_field = declarations
+    // 3. Skeleton of a Chat-completion request
+    let decl_array = declarations
         .as_array()
-        .unwrap()
+        .ok_or("function_declarations() did not return a JSON array")?; // ◀ no unwrap
+
+    let tools_field: Vec<JsonValue> = decl_array
         .iter()
         .map(|f| json!({ "type": "function", "function": f }))
-        .collect::<Vec<_>>();
+        .collect();
 
     let chat_request = json!({
         "model": "gpt-4o",
@@ -127,6 +130,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "tool_choice": "auto",
         "tools": tools_field
     });
+
     println!("\n=== Example Chat Request ===");
     println!("{}", serde_json::to_string_pretty(&chat_request)?);
 
@@ -142,7 +146,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             name: "create_person".into(),
             arguments: json!({ "person": alice }),
         })
-        .await?;
+        .await?; // ◀ ToolError → Box<dyn Error>
+
     println!("\nCreated person (runtime): {created}");
 
     // 5. Direct invocation of `search`
@@ -164,7 +169,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             name: "search".into(),
             arguments: json!({ "request": req }),
         })
-        .await?;
+        .await?; // ◀ same
+
     println!("\nSearch results (runtime): {results}");
 
     Ok(())

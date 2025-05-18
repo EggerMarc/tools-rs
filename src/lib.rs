@@ -10,7 +10,7 @@
 
 pub use toors::{
     schema::{schema_to_json_schema, FunctionDecl},
-    FunctionCall, ToolCollection, ToolRegistration, TypeSignature,
+    FunctionCall, ToolCollection, ToolError, ToolRegistration, TypeSignature,
 };
 
 pub use toors_macros::tool;
@@ -26,10 +26,10 @@ pub fn collect_tools() -> ToolCollection {
 /// can be pasted straight into the `tools` / `functionDeclarations` field of
 /// an OpenAI / Gemini chat-completion request.
 #[inline]
-pub fn function_declarations() -> serde_json::Value {
-    collect_tools().json()
+pub fn function_declarations() -> Result<serde_json::Value, ToolError> {
+    // ◀ now Result
+    collect_tools().json() // ◀ bubbles `?` inside
 }
-
 // ============================================================================
 // Tests
 // ============================================================================

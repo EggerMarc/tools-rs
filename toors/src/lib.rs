@@ -23,7 +23,7 @@ use futures::{FutureExt, future::BoxFuture};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{self, Value};
 
-use error::{DeserializationError, ToolError};
+pub use error::{DeserializationError, ToolError};
 pub use models::{FunctionCall, Tool, ToolFunc, ToolMetadata, ToolRegistration, TypeSignature};
 pub use schema::{FunctionDecl, schema_to_json_schema};
 
