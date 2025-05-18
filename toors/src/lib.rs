@@ -41,16 +41,15 @@ pub trait MaybeJsonSchema {}
 #[cfg(not(feature = "schema"))]
 impl<T> MaybeJsonSchema for T {}
 
-/// Return the JSON representation of the schema for `T`, or `null` when the
-/// `schema` feature is disabled.
 #[cfg(feature = "schema")]
-fn schema_value<T: schemars::JsonSchema>() -> Value {
-    serde_json::to_value(schema_to_json_schema::<T>()).expect("schemars schema is serialisable")
+fn schema_value<T: schemars::JsonSchema>() -> Result<Value, ToolError> {
+    let schema = schema_to_json_schema::<T>();
+    Ok(serde_json::to_value(schema)?)
 }
 
 #[cfg(not(feature = "schema"))]
-fn schema_value<T>() -> Value {
-    Value::Null
+fn schema_value<T>() -> Result<Value, ToolError> {
+    Ok(Value::Null)
 }
 
 // ---------------------------------------------------------------------------
@@ -109,8 +108,8 @@ impl ToolCollection {
             FunctionDecl {
                 name,
                 description: desc,
-                parameters: schema_value::<I>(),
-                returns: schema_value::<O>(),
+                parameters: schema_value::<I>()?,
+                returns: schema_value::<O>()?,
             },
         );
 
@@ -200,9 +199,9 @@ impl ToolCollection {
     }
 
     /// Export every registered tool as a JSON array ready for OpenAI/Gemini.
-    pub fn json(&self) -> Value {
+    pub fn json(&self) -> Result<Value, ToolError> {
         let list: Vec<&FunctionDecl> = self.declarations.values().collect();
-        serde_json::to_value(list).expect("FunctionDecl serialises")
+        Ok(serde_json::to_value(list)?)
     }
 }
 
