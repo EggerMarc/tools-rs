@@ -1,7 +1,3 @@
-//! toors_basic.rs – minimal demo that matches the new Toors
-//! wrapper-struct convention (each parameter lives in a JSON object whose
-//! keys equal the Rust argument names).
-
 use serde_json::json;
 use toors_core::{FunctionCall, collect_tools, tool};
 
@@ -41,9 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hub = collect_tools();
 
-    // ------------------------------------------------------------------
-    // 1. add(3, 4)   — JSON key must match the parameter name `pair`
-    // ------------------------------------------------------------------
     let sum = hub
         .call(FunctionCall {
             name: "add".into(),
@@ -52,9 +45,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("add(3, 4) → {sum}");
 
-    // ------------------------------------------------------------------
-    // 2. greet("World")  — key is `name`
-    // ------------------------------------------------------------------
     let greeting = hub
         .call(FunctionCall {
             name: "greet".into(),
@@ -63,9 +53,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("greet(\"World\") → {greeting}");
 
-    // ------------------------------------------------------------------
-    // 3. fibonacci(10)   — key is `n`
-    // ------------------------------------------------------------------
     let fib = hub
         .call(FunctionCall {
             name: "fibonacci".into(),
@@ -74,9 +61,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("fibonacci(10) → {fib}");
 
-    // ------------------------------------------------------------------
-    // Available tools
-    // ------------------------------------------------------------------
     println!("\nAvailable tools:");
     for (name, description) in hub.descriptions() {
         println!("  - {name}: {description}");

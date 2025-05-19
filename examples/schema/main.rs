@@ -1,15 +1,3 @@
-//! main.rs – End-to-end demo for **Toors**
-//!
-//! *With JSON-Schema*  
-//! ```bash
-//! cargo run --example schema --features schema
-//! ```
-//!
-//! *Without JSON-Schema* (smaller binary; schemas become `null`)  
-//! ```bash
-//! cargo run --example schema
-//! ```
-
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use std::error::Error;
@@ -17,10 +5,6 @@ use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Domain types
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, Debug)]
@@ -63,10 +47,6 @@ struct SearchResult {
     rating: f32,
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tools exposed to the LLM
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[tool]
 /// Create a new person and return it.
 async fn create_person(person: Person) -> Person {
@@ -93,10 +73,6 @@ async fn search(request: SearchRequest) -> Vec<SearchResult> {
         },
     ]
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Driver
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

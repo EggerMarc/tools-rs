@@ -1,15 +1,9 @@
-//! demo_fixed.rs – corrected minimal demo for **Toors**
-
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-
-// ─────────────────────────────────────────────────────────────
-// Domain types
-// ─────────────────────────────────────────────────────────────
 
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, Debug)]
@@ -19,10 +13,6 @@ struct WeatherInfo {
     conditions: String,
     humidity: u8,
 }
-
-// ─────────────────────────────────────────────────────────────
-// Tools
-// ─────────────────────────────────────────────────────────────
 
 #[tool]
 /// Return today’s date in ISO-8601 (`YYYY-MM-DD`) format.
@@ -47,22 +37,14 @@ async fn weather(location: String) -> WeatherInfo {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Driver
-// ─────────────────────────────────────────────────────────────
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. compile-time inventory → runtime registry
     let tools = collect_tools();
-
-    // 2. declarations for the LLM (may fail → bubble up)
-    let decls: JsonValue = function_declarations()?; // ◀ was bare Value
+    let decls: JsonValue = function_declarations()?;
 
     println!("=== Function Declarations ===");
     println!("{}", serde_json::to_string_pretty(&decls)?);
 
-    // 3. sketch of a chat request (OpenAI style: `tools` array)
     let chat_request = json!({
         "model": "gpt-4o",
         "messages": [
@@ -72,13 +54,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
               "content": "What's today's date and what's the factorial of 5?" }
         ],
         "tool_choice": "auto",
-        "tools": decls                               // still the same JSON value
+        "tools": decls
     });
 
     println!("\n=== Example LLM Request ===");
     println!("{}", serde_json::to_string_pretty(&chat_request)?);
 
-    // 4. call `today`
     let date = tools
         .call(FunctionCall {
             name: "today".into(),
@@ -87,7 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("\nToday  : {date}");
 
-    // 5. call `factorial`
     let fact = tools
         .call(FunctionCall {
             name: "factorial".into(),
@@ -96,7 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("5!     : {fact}");
 
-    // 6. call `weather`
     let meteo = tools
         .call(FunctionCall {
             name: "weather".into(),
