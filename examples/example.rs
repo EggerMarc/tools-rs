@@ -78,10 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     println!("Weather result: {}", weather);
 
-    // Optional: dump the declarations
+    let decls = tools.json()?; // now `decls: serde_json::Value`
     println!(
         "\nFunction declarations:\n{}",
-        serde_json::to_string_pretty(&tools.json())?
+        serde_json::to_string_pretty(&decls)? // <— OK, `Value: Serialize`
     );
 
     Ok(())
