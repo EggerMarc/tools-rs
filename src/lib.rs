@@ -1,31 +1,38 @@
-//! toors_core: Top-level crate for the Toors tool collection system
+//! toors_core – Lightweight façade for the **Toors** runtime.
 //!
-//! This crate provides a convenient entry point for using the Toors tool collection system.
-//! It re-exports the main components from the `toors` crate and provides additional
-//! convenience functionality.
+//! * Re-exports the primary APIs from the `toors` crate so downstream users
+//!   only depend on a single public crate.
+//! * Adds a couple of thin helpers (`collect_tools`, `function_declarations`).
+//!
+//! When compiled **with** the Cargo-feature `schema`, every `FunctionDecl`
+//! contains a full JSON-Schema (courtesy of *schemars*).  Without the feature
+//! those fields are `null`, but the public surface stays identical.
 
 pub use toors::{
-    FunctionCall, ToolCollection, ToolRegistration, TypeSignature,
-    schema::{FunctionDecl, TypeName, type_to_decl},
+    schema::{schema_to_json_schema, FunctionDecl},
+    FunctionCall, ToolCollection, ToolError, ToolRegistration, TypeSignature,
 };
+
 pub use toors_macros::tool;
 
-/// Collects all registered tools and returns a tool collection.
-///
-/// This is a convenience function that calls `ToolCollection::collect_tools()`.
+/// Collect every tool that was *registered at compile-time* through the
+/// `#[tool]` macro and return a live [`ToolCollection`].
+#[inline]
 pub fn collect_tools() -> ToolCollection {
     ToolCollection::collect_tools()
 }
 
-/// Export all registered tools as a JSON array ready for "functionDeclarations".
-///
-/// This is a convenience function that calls `collect_tools().json()`.
-pub fn function_declarations() -> serde_json::Value {
-    collect_tools().json()
+/// Convenience wrapper around [`collect_tools`], returning the JSON array that
+/// can be pasted straight into the `tools` / `functionDeclarations` field of
+/// an OpenAI / Gemini chat-completion request.
+#[inline]
+pub fn function_declarations() -> Result<serde_json::Value, ToolError> {
+    // ◀ now Result
+    collect_tools().json() // ◀ bubbles `?` inside
 }
-
-#[cfg(test)]
-use serde_json::json;
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -33,23 +40,23 @@ mod tests {
     use serde_json::json;
 
     #[tool]
-    /// Test function that adds two numbers.
-    async fn add(pair: (i32, i32)) -> i32 {
-        pair.0 + pair.1
+    /// Adds two numbers.
+    async fn add(a: i32, b: i32) -> i32 {
+        a + b
     }
 
     #[tokio::test]
-        async fn test_tool_macro_and_collection() {
-            let hub = collect_tools();
-        
-            let result = hub
-                .call(FunctionCall {
-                    name: "add".into(),
-                    arguments: json!((5, 7)),
-                })
-                .await
-                .unwrap();
-        
-            assert_eq!(result.to_string(), "12");
-        }
+    async fn tool_macro_and_collection() {
+        let hub = collect_tools();
+
+        let result = hub
+            .call(FunctionCall {
+                name: "add".into(),
+                arguments: json!({ "a": 5, "b": 7 }),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, json!(12));
+    }
 }

@@ -21,6 +21,9 @@ pub struct ParseError(pub Cow<'static, str>);
 #[error(transparent)]
 pub struct DeserializationError(#[from] pub JsonError);
 
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct SerializationError(#[from] pub JsonError);
 /*───────────────────────────────────────────────────────────────────────────*/
 
 /// All the ways a call into a [`ToolCollection`] can fail.
@@ -50,4 +53,8 @@ pub enum ToolError {
     /// Something inside the user function panicked or bubbled up an error.
     #[error("Runtime error: {0}")]
     Runtime(String),
+
+    /// Typed-value → JSON serialisation failed.
+    #[error(transparent)]
+    Serialize(#[from] JsonError),
 }
