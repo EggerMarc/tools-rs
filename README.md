@@ -73,7 +73,6 @@ The Toors system is organized into several crates following Rust best practices:
   - `schema`: Function declaration schemas
   - `db`: Database utilities (optional)
 - **toors_macros**: Procedural macros for tool registration
-- **toors_derive**: Derive macros (optional)
 
 For more details about the codebase organization, see [CODE_ORGANIZATION.md](CODE_ORGANIZATION.md).
 

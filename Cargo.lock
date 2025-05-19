@@ -146,7 +146,6 @@ dependencies = [
  "tokio",
  "toors",
  "toors_core",
- "toors_derive",
  "toors_macros",
 ]
 
@@ -670,16 +669,6 @@ dependencies = [
  "tokio",
  "toors",
  "toors_macros",
-]
-
-[[package]]
-name = "toors_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
- "toors",
 ]
 
 [[package]]

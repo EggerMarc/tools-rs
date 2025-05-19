@@ -17,7 +17,7 @@ schemars     = { version = "0.8.16", optional = true }
 chrono       = "0.4.34"
 
 [workspace]
-members  = ["toors", "toors_macros", "toors_derive", "examples"]
+members  = ["toors", "toors_macros", "examples"]
 resolver = "2"
 
 [workspace.package]

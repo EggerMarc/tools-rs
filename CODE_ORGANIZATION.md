@@ -28,10 +28,6 @@ toors/
 │   ├── Cargo.toml
 │   └── src/
 │       └── lib.rs       # Macro definitions
-├── toors_derive/        # Derive macros (optional)
-│   ├── Cargo.toml
-│   └── src/
-│       └── lib.rs       # Derive macro implementations
 └── examples/            # Example code
     ├── Cargo.toml
     ├── basic/           # Basic usage examples
@@ -61,12 +57,6 @@ This is the core implementation crate that:
 Provides procedural macros for:
 - Tool registration (`#[tool]` attribute)
 - Auto-registration with inventory
-
-### toors_derive (optional)
-
-Provides derive macros for:
-- Custom trait implementations
-- Additional tool-related functionality
 
 ## Module Organization
 
