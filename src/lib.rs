@@ -8,12 +8,12 @@
 //! contains a full JSON-Schema (courtesy of *schemars*).  Without the feature
 //! those fields are `null`, but the public surface stays identical.
 
-pub use toors::{
+pub use tools::{
     schema::{schema_to_json_schema, FunctionDecl},
     FunctionCall, ToolCollection, ToolError, ToolRegistration, TypeSignature,
 };
 
-pub use toors_macros::tool;
+pub use tools_macros::tool;
 
 /// Collect every tool that was *registered at compile-time* through the
 /// `#[tool]` macro and return a live [`ToolCollection`].

@@ -1,4 +1,4 @@
-//! toors_macros – Procedural macros for **Toors Runtime**
+//! tools_macros – Procedural macros for **Toors Runtime**
 //!
 //! This version flattens `"properties"` **and** strips `"title"` from the
 //! emitted JSON-Schema so the root of `"parameters"` / `"returns"` contains
