@@ -2,7 +2,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tools::{FunctionCall, collect_tools, tool};
+use tools_rs::{FunctionCall, collect_tools, tool};
 
 #[tool]
 /// Adds two numbers.
