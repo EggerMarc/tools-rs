@@ -1,6 +1,6 @@
-# Toors Examples
+# Tools-rs Examples
 
-This directory contains examples demonstrating how to use the Toors library.
+This directory contains examples demonstrating how to use the tools-rs library.
 
 ## Running Examples
 
@@ -36,4 +36,4 @@ When creating a new example:
 3. Update this README to include your example
 4. If your example requires more than a single file, create appropriate modules
 
-All examples should demonstrate good practices for using the Toors library.
+All examples should demonstrate good practices for using the tools-rs library.

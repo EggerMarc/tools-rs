@@ -1,6 +1,6 @@
-//! toors_core – Lightweight façade for the **Toors** runtime.
+//! tools – Lightweight façade for the **Tools-rs** runtime.
 //!
-//! * Re-exports the primary APIs from the `toors` crate so downstream users
+//! * Re-exports the primary APIs from the `tools` crate so downstream users
 //!   only depend on a single public crate.
 //! * Adds a couple of thin helpers (`collect_tools`, `function_declarations`).
 //!
@@ -8,12 +8,12 @@
 //! contains a full JSON-Schema (courtesy of *schemars*).  Without the feature
 //! those fields are `null`, but the public surface stays identical.
 
-pub use toors::{
+pub use tools::{
     schema::{schema_to_json_schema, FunctionDecl},
     FunctionCall, ToolCollection, ToolError, ToolRegistration, TypeSignature,
 };
 
-pub use toors_macros::tool;
+pub use tools_macros::tool;
 
 /// Collect every tool that was *registered at compile-time* through the
 /// `#[tool]` macro and return a live [`ToolCollection`].

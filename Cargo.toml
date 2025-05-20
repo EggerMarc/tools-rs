@@ -1,34 +1,38 @@
 [package]
 edition = "2021"
-name    = "toors_core"
+name    = "tools-rs"
 version = "0.1.0"
-description = "Core functionality for the Toors tool collection system"
-authors = ["Toors Team"]
+description = "Core functionality for the tools-rs tool collection system"
+authors = ["Tools-rs Team"]
 license = "MIT"
+
+[lib]
+name = "tools_rs"        
+path = "src/lib.rs"
 
 [dependencies]
 inventory    = "0.3.20"
 serde        = { version = "1.0.219", features = ["derive"] }
 serde_json   = "1.0.140"
 tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
-toors        = { path = "./toors", features = [] }
-toors_macros = { path = "./toors_macros" }
+tools        = { path = "./tools", features = [] }
+tools_macros = { path = "./tools_macros" }
 schemars     = { version = "0.8.16", optional = true }
 chrono       = "0.4.34"
 
 [workspace]
-members  = ["toors", "toors_macros", "examples"]
+members  = ["tools", "tools_macros", "examples"]
 resolver = "2"
 
 [workspace.package]
-authors = ["Toors Team"]
+authors = ["Tools-rs Team"]
 license = "MIT"
-repository = "https://github.com/username/toors"
+repository = "https://github.com/EggerMarc/toors"
 rust-version = "1.70"
 
 [features]
 default = []
-schema = ["toors/schema", "dep:schemars"]
+schema = ["tools/schema", "dep:schemars"]
 
 [workspace.dependencies]
 inventory    = "0.3.20"

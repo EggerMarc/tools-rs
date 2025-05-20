@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-name    = "toors"
+name    = "tools"
 version = "0.3.0"
 
 # ────────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ thiserror  = "2.0.12"
 tokio      = { version = "1.44.2", features = ["macros", "rt-multi-thread", "time"] }
 tokio-test = "0.4.4"
 
-toors_macros = { path = "../toors_macros" }
+tools_macros = { path = "../tools_macros" }
 
 # ────────────────────────────────────────────────────────────────
 # Cargo feature flags

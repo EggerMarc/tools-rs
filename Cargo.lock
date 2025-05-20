@@ -144,9 +144,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "toors",
- "toors_core",
- "toors_macros",
+ "tools",
+ "tools-rs",
+ "tools_macros",
 ]
 
 [[package]]
@@ -643,7 +643,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "toors"
+name = "tools"
 version = "0.3.0"
 dependencies = [
  "futures",
@@ -654,11 +654,11 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "toors_macros",
+ "tools_macros",
 ]
 
 [[package]]
-name = "toors_core"
+name = "tools-rs"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -667,12 +667,12 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "toors",
- "toors_macros",
+ "tools",
+ "tools_macros",
 ]
 
 [[package]]
-name = "toors_macros"
+name = "tools_macros"
 version = "0.1.0"
 dependencies = [
  "inventory",
