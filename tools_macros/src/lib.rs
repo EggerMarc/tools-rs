@@ -1,4 +1,4 @@
-//! tools_macros – Procedural macros for **Toors Runtime**
+//! tools_macros – Procedural macros for **Tools-rs Runtime**
 //!
 //! This version flattens `"properties"` **and** strips `"title"` from the
 //! emitted JSON-Schema so the root of `"parameters"` / `"returns"` contains
@@ -67,7 +67,7 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     /* generated names */
-    let wrapper_ident = Ident::new(&format!("__ToorsInput_{}", fn_name), Span::call_site());
+    let wrapper_ident = Ident::new(&format!("__ToolInput_{}", fn_name), Span::call_site());
     let flatten_fn = Ident::new(&format!("__flatten_schema_{}", fn_name), Span::call_site());
 
     /* expansion */
@@ -96,7 +96,7 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         inventory::submit! {
-            toors::ToolRegistration::new(
+            tools::ToolRegistration::new(
                 #fn_name_str,
                 #doc_lit,
 
@@ -104,17 +104,17 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 |v| ::std::boxed::Box::pin(async move {
                     let arg: #wrapper_ident =
                         ::serde_json::from_value(v)
-                            .map_err(toors::error::DeserializationError::from)?;
+                            .map_err(tools::error::DeserializationError::from)?;
                     let out = #fn_name( #( arg.#idents ),* ).await;
                     ::serde_json::to_value(out)
-                        .map_err(|e| toors::error::ToolError::Runtime(e.to_string()))
+                        .map_err(|e| tools::error::ToolError::Runtime(e.to_string()))
                 }),
 
                 /* parameter-schema */
                 || {
                     #[cfg(feature = "schema")]
                     {
-                        let raw = toors::schema::schema_to_json_schema::<#wrapper_ident>();
+                        let raw = tools::schema::schema_to_json_schema::<#wrapper_ident>();
                         #flatten_fn(::serde_json::to_value(raw).unwrap())
                     }
                     #[cfg(not(feature = "schema"))]
@@ -125,7 +125,7 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 || {
                     #[cfg(feature = "schema")]
                     {
-                        let raw = toors::schema::schema_to_json_schema::<#output_ty>();
+                        let raw = tools::schema::schema_to_json_schema::<#output_ty>();
                         #flatten_fn(::serde_json::to_value(raw).unwrap())
                     }
                     #[cfg(not(feature = "schema"))]

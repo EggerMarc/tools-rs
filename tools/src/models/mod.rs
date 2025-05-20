@@ -1,6 +1,6 @@
-//! Core data models for the toors library
+//! Core data models for the tools-rs library
 //!
-//! This module contains the core data structures used by the toors library.
+//! This module contains the core data structures used by the tools-rs library.
 
 use futures::future::BoxFuture;
 use serde::Deserialize;

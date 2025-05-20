@@ -1,18 +1,18 @@
-# Toors Code Organization
+# Tools-rs Code Organization
 
-This document describes the organization of the Toors codebase following Rust best practices.
+This document describes the organization of the Tools-rs codebase following Rust best practices.
 
 ## Project Structure
 
 The project is organized as a Rust workspace with multiple crates:
 
 ```
-toors/
+tools-rs/
 ├── Cargo.toml           # Workspace definition and main crate
-├── src/                 # Main crate source (toors_core)
+├── src/                 # Main crate source (tools-rs)
 │   ├── lib.rs           # Re-exports and high-level API
 │   └── main.rs          # Example binary
-├── toors/               # Core implementation crate
+├── tools/               # Core implementation crate
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs       # Main library code
@@ -24,7 +24,7 @@ toors/
 │       │   └── mod.rs   # Error types and implementations
 │       └── db/          # Database utilities
 │           └── mod.rs   # Database-related code
-├── toors_macros/        # Procedural macros
+├── tools_macros/        # Procedural macros
 │   ├── Cargo.toml
 │   └── src/
 │       └── lib.rs       # Macro definitions
@@ -37,14 +37,14 @@ toors/
 
 ## Crate Responsibilities
 
-### toors_core
+### tools-rs
 
 This is the main crate that users interact with. It:
 - Re-exports the most commonly used types and functions
 - Provides a simple API for using the tool collection system
-- Acts as a convenience layer over the toors crate
+- Acts as a convenience layer over the tools-rs crate
 
-### toors
+### tools
 
 This is the core implementation crate that:
 - Defines the core data structures
@@ -52,7 +52,7 @@ This is the core implementation crate that:
 - Handles runtime registration and execution of tools
 - Manages error handling and type safety
 
-### toors_macros
+### tools_macros
 
 Provides procedural macros for:
 - Tool registration (`#[tool]` attribute)

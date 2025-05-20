@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
-use toors_core::{FunctionCall, collect_tools, function_declarations, tool};
+use tools_rs::{FunctionCall, collect_tools, function_declarations, tool};
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;

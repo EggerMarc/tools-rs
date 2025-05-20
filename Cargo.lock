@@ -145,8 +145,8 @@ dependencies = [
  "serde_json",
  "tokio",
  "tools",
+ "tools-rs",
  "tools_macros",
- "toors_core",
 ]
 
 [[package]]
@@ -658,17 +658,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tools_macros"
-version = "0.1.0"
-dependencies = [
- "inventory",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "toors_core"
+name = "tools-rs"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -679,6 +669,16 @@ dependencies = [
  "tokio",
  "tools",
  "tools_macros",
+]
+
+[[package]]
+name = "tools_macros"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 use serde_json::json;
-use toors_core::{FunctionCall, collect_tools, tool};
+use tools_rs::{FunctionCall, collect_tools, tool};
 
 #[tool]
 /// Adds two numbers.
@@ -33,7 +33,7 @@ async fn fibonacci(n: u32) -> u64 {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Toors Basic Example\n===================");
+    println!("Tools-rs Basic Example\n===================");
 
     let hub = collect_tools();
 

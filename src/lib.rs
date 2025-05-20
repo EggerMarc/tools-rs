@@ -1,6 +1,6 @@
-//! toors_core – Lightweight façade for the **Toors** runtime.
+//! tools – Lightweight façade for the **Tools-rs** runtime.
 //!
-//! * Re-exports the primary APIs from the `toors` crate so downstream users
+//! * Re-exports the primary APIs from the `tools` crate so downstream users
 //!   only depend on a single public crate.
 //! * Adds a couple of thin helpers (`collect_tools`, `function_declarations`).
 //!

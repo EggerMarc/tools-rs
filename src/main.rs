@@ -1,5 +1,7 @@
 use serde_json::json;
-use toors_core::{collect_tools, tool, FunctionCall};
+use tools_rs::collect_tools;
+use tools::FunctionCall;
+use tools_macros::tool;
 
 #[tool]
 /// Adds two numbers (pair).

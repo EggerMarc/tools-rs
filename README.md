@@ -1,10 +1,11 @@
-# Toors - Tool Runtime System for Rust
+# Tools-rs - Tool Runtime System for Rust
+| It's pronounced tools-r-us!!
 
-[![Crates.io](https://img.shields.io/crates/v/toors_core.svg)](https://crates.io/crates/toors_core)
-[![Documentation](https://docs.rs/toors_core/badge.svg)](https://docs.rs/toors_core)
+[![Crates.io](https://img.shields.io/crates/v/.svg)](https://crates.io/crates/)
+[![Documentation](https://docs.rs/tools-rs/badge.svg)](https://docs.rs/tools-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Toors is a minimal, fully-typed, JSON-driven runtime for Large Language Model (LLM) function-calling in Rust.
+Tools-rs is a minimal, fully-typed, JSON-driven runtime for Large Language Model (LLM) function-calling in Rust.
 
 > **Note**: This codebase has been reorganized following Rust best practices. See [CODE_ORGANIZATION.md](CODE_ORGANIZATION.md) for details.
 
@@ -20,7 +21,7 @@ Toors is a minimal, fully-typed, JSON-driven runtime for Large Language Model (L
 
 ```rust
 use serde_json::json;
-use toors_core::{collect_tools, FunctionCall, tool};
+use tools_rs::{collect_tools, FunctionCall, tool};
 
 #[tool]
 /// Adds two numbers.
@@ -64,15 +65,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Crate Structure
 
-The Toors system is organized into several crates following Rust best practices:
+The tools-rs system is organized into several crates following Rust best practices:
 
-- **toors_core**: Main entry point, re-exports the most commonly used items
-- **toors**: Core runtime implementation with modular organization:
+- **tools-rs**: Main entry point, re-exports the most commonly used items
+- **tools**: Core runtime implementation with modular organization:
   - `models`: Core data structures
   - `error`: Error types and handling
   - `schema`: Function declaration schemas
   - `db`: Database utilities (optional)
-- **toors_macros**: Procedural macros for tool registration
+- **tools_macros**: Procedural macros for tool registration
 
 For more details about the codebase organization, see [CODE_ORGANIZATION.md](CODE_ORGANIZATION.md).
 
@@ -82,19 +83,19 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-toors_core = "0.1.0"
+tools-rs = "0.1.0"
 ```
 
 ## Why This Crate Exists
 
-LLMs can emit a *function-call* intent instead of free-form text. The host application must then **deserialize**, **dispatch**, and **serialize** the result **safely**. `toors` provides exactly that glue while retaining Rust's *zero-cost abstractions* and type system.
+LLMs can emit a *function-call* intent instead of free-form text. The host application must then **deserialize**, **dispatch**, and **serialize** the result **safely**. `tools-rs` provides exactly that glue while retaining Rust's *zero-cost abstractions* and type system.
 
 ### Function Declarations for LLMs
 
-Toors can automatically generate function declarations suitable for LLM APIs:
+Tools-rs can automatically generate function declarations suitable for LLM APIs:
 
 ```rust
-use toors_core::{function_declarations, tool};
+use tools_rs::{function_declarations, tool};
 
 #[tool]
 /// Return the current date in ISO-8601 format.
@@ -133,14 +134,14 @@ With the `schema` feature enabled, this becomes full JSON Schema:
 
 ```toml
 [dependencies]
-toors_core = { version = "0.1.0", features = ["schema"] }
+tools-rs = { version = "0.1.0", features = ["schema"] }
 ```
 
 For a complete example of using JSON Schema with complex types, see the [schema example](examples/schema/main.rs).
 
 ## Examples
 
-Check out the [examples directory](examples/) for sample code showing how to use the Toors library:
+Check out the [examples directory](examples/) for sample code showing how to use the tools-rs library:
 
 ```bash
 # Run the basic example

@@ -2,10 +2,10 @@
 name = "examples"
 version = "0.1.0"
 edition = "2024"
-description = "Examples for the toors crate"
+description = "Examples for the tools-rs crate"
 
 [dependencies]
-toors_core = { path = "..", features = ["schema"] }
+tools-rs = { path = "..", features = ["schema"] }
 tools = { path = "../tools", features = ["schema"] }
 tools_macros = { path = "../tools_macros" }
 serde = { version = "1.0", features = ["derive"] }
