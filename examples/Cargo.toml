@@ -1,19 +1,27 @@
 [package]
-name = "examples"
-version = "0.1.0"
-edition = "2024"
 description = "Examples for the tools-rs crate"
+edition     = "2021"
+name        = "examples"
+version     = "0.1.0"
 
+# The examples build without JSON-Schema support by default.
 [dependencies]
-tools-rs = { path = "..", features = ["schema"] }
-tools = { path = "../tools", features = ["schema"] }
-tools_macros = { path = "../tools_macros" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-chrono = "0.4"
-schemars = "0.8.16"
-inventory = "0.3.20"
+chrono.workspace     = true
+inventory.workspace  = true
+serde.workspace      = true
+serde_json.workspace = true
+tokio                = { workspace = true, features = ["full"] }
+
+# Local crates
+tools    = { path = "../tools", default-features = false, features = ["schema"] }
+tools-rs = { path = "..", default-features = false, features = ["schema"] }
+
+# Only required when the `schema` feature is flipped on.
+schemars = { workspace = true, optional = true }
+
+[features]
+default = []
+schema  = ["dep:schemars", "tools/schema", "tools-rs/schema"]
 
 [[example]]
 name = "basic"

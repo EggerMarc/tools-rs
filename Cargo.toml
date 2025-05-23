@@ -1,43 +1,49 @@
 [package]
-edition = "2021"
-name    = "tools-rs"
-version = "0.1.0"
+authors     = ["Tools-rs Team"]
 description = "Core functionality for the tools-rs tool collection system"
-authors = ["Tools-rs Team"]
-license = "MIT"
+edition     = "2021"
+license     = "MIT"
+name        = "tools-rs"
+version     = "0.1.0"
 
 [lib]
-name = "tools_rs"        
+name = "tools_rs"
 path = "src/lib.rs"
 
-[dependencies]
-inventory    = "0.3.20"
-serde        = { version = "1.0.219", features = ["derive"] }
-serde_json   = "1.0.140"
-tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
-tools        = { path = "./tools", features = [] }
-tools_macros = { path = "./tools_macros" }
-schemars     = { version = "0.8.16", optional = true }
-chrono       = "0.4.34"
-
+# ──────────────────────────────────
+# Workspace
+# ──────────────────────────────────
 [workspace]
 members  = ["tools", "tools_macros", "examples"]
 resolver = "2"
 
 [workspace.package]
-authors = ["Tools-rs Team"]
-license = "MIT"
-repository = "https://github.com/EggerMarc/toors"
+authors      = ["Tools-rs Team"]
+edition      = "2021"
+license      = "MIT"
+repository   = "https://github.com/EggerMarc/toors"
 rust-version = "1.70"
+
+# Centralised dependency versions (single source of truth)
+[workspace.dependencies]
+chrono     = "0.4.34"
+inventory  = "0.3.20"
+schemars   = "0.8.22"                                                         # version kept in sync, still optional in crates
+serde      = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tokio      = { version = "1.45.0", features = ["rt-multi-thread", "macros"] }
+
+# Root-crate specific deps
+[dependencies]
+chrono.workspace     = true
+inventory.workspace  = true
+schemars             = { workspace = true, optional = true }
+serde.workspace      = true
+serde_json.workspace = true
+tokio.workspace      = true
+tools                = { path = "./tools" }
+tools_macros         = { path = "./tools_macros" }
 
 [features]
 default = []
-schema = ["tools/schema", "dep:schemars"]
-
-[workspace.dependencies]
-inventory    = "0.3.20"
-serde        = { version = "1.0.219", features = ["derive"] }
-serde_json   = "1.0.140"
-tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
-chrono       = "0.4.34"
-schemars     = "0.8.16"
+schema  = ["dep:schemars", "tools/schema"] # re-export sub-crate feature
