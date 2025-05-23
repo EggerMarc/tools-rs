@@ -1,11 +1,12 @@
 [package]
-edition = "2021"
+edition = "2024"
 name    = "tools"
 version = "0.3.0"
 
 [dependencies]
 futures              = "0.3.31"
 inventory.workspace  = true
+schemars             = { workspace = true, features = ["derive"], optional = true }
 serde.workspace      = true
 serde_json.workspace = true
 thiserror            = "2.0.12"
@@ -13,9 +14,6 @@ tokio                = { workspace = true, features = ["macros", "rt-multi-threa
 tokio-test           = "0.4.4"
 tools_macros         = { path = "../tools_macros" }
 
-# Optional JSON-Schema support
-schemars = { workspace = true, features = ["derive"], optional = true }
-
 [features]
-default = []           # lean, no schema generation
+default = []
 schema  = ["schemars"]

@@ -1,10 +1,9 @@
 [package]
 description = "Examples for the tools-rs crate"
-edition     = "2021"
+edition     = "2024"
 name        = "examples"
 version     = "0.1.0"
 
-# The examples build without JSON-Schema support by default.
 [dependencies]
 chrono.workspace     = true
 inventory.workspace  = true
@@ -12,11 +11,9 @@ serde.workspace      = true
 serde_json.workspace = true
 tokio                = { workspace = true, features = ["full"] }
 
-# Local crates
 tools    = { path = "../tools", default-features = false, features = ["schema"] }
 tools-rs = { path = "..", default-features = false, features = ["schema"] }
 
-# Only required when the `schema` feature is flipped on.
 schemars = { workspace = true, optional = true }
 
 [features]
