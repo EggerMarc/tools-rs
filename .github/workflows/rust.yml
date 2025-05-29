@@ -20,5 +20,5 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose 
-    - name: Tools-rs tests
-      run: cd tools_rs && cargo test --verbose 
+    - name: Tools tests
+      run: cd tools && cargo test --verbose 
