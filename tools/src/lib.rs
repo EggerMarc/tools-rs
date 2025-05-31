@@ -1,8 +1,5 @@
 #![deny(unsafe_code)]
 
-#[cfg(feature = "schema")]
-extern crate schemars;
-
 pub mod error;
 pub mod models;
 pub mod schema;
@@ -10,32 +7,16 @@ pub mod schema;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use futures::{FutureExt, future::BoxFuture};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{self, Value};
+use tool_schema::ToolSchema;
 
 pub use error::{DeserializationError, ToolError};
 pub use models::{FunctionCall, Tool, ToolFunc, ToolMetadata, ToolRegistration, TypeSignature};
-pub use schema::{FunctionDecl, schema_to_json_schema};
+pub use schema::FunctionDecl;
 
-#[cfg(feature = "schema")]
-pub trait MaybeJsonSchema: schemars::JsonSchema {}
-#[cfg(feature = "schema")]
-impl<T: schemars::JsonSchema> MaybeJsonSchema for T {}
-
-#[cfg(not(feature = "schema"))]
-pub trait MaybeJsonSchema {}
-#[cfg(not(feature = "schema"))]
-impl<T> MaybeJsonSchema for T {}
-
-#[cfg(feature = "schema")]
-fn schema_value<T: schemars::JsonSchema>() -> Result<Value, ToolError> {
-    let schema = schema_to_json_schema::<T>();
-    Ok(serde_json::to_value(schema)?)
-}
-
-#[cfg(not(feature = "schema"))]
-fn schema_value<T>() -> Result<Value, ToolError> {
-    Ok(Value::Null)
+fn schema_value<T: ToolSchema>() -> Result<Value, ToolError> {
+    Ok(T::schema())
 }
 
 #[derive(Default)]
@@ -58,8 +39,8 @@ impl ToolCollection {
         func: F,
     ) -> Result<&mut Self, ToolError>
     where
-        I: 'static + DeserializeOwned + Serialize + Send + MaybeJsonSchema,
-        O: 'static + Serialize + Send + MaybeJsonSchema,
+        I: 'static + DeserializeOwned + Serialize + Send + ToolSchema,
+        O: 'static + Serialize + Send + ToolSchema,
         F: Fn(I) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = O> + Send + 'static,
     {
@@ -68,24 +49,10 @@ impl ToolCollection {
         }
 
         self.descriptions.insert(name, desc);
-        self.signatures.insert(
-            name,
-            TypeSignature {
-                input_id: std::any::TypeId::of::<I>(),
-                output_id: std::any::TypeId::of::<O>(),
-                input_name: std::any::type_name::<I>().into(),
-                output_name: std::any::type_name::<O>().into(),
-            },
-        );
 
         self.declarations.insert(
             name,
-            FunctionDecl {
-                name,
-                description: desc,
-                parameters: schema_value::<I>()?,
-                returns: schema_value::<O>()?,
-            },
+            FunctionDecl::new(name, desc, schema_value::<I>()?),
         );
 
         let func_arc: Arc<F> = Arc::new(func);
@@ -135,10 +102,6 @@ impl ToolCollection {
         self.descriptions.iter().map(|(k, v)| (*k, *v))
     }
 
-    pub fn signatures(&self) -> impl Iterator<Item = (&'static str, &TypeSignature)> + '_ {
-        self.signatures.iter().map(|(k, v)| (*k, v))
-    }
-
     pub fn collect_tools() -> Self {
         let mut hub = Self::new();
 
@@ -148,12 +111,7 @@ impl ToolCollection {
 
             hub.declarations.insert(
                 reg.name,
-                FunctionDecl {
-                    name: reg.name,
-                    description: reg.doc,
-                    parameters: (reg.param_schema)(),
-                    returns: (reg.return_schema)(),
-                },
+                FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
             );
         }
 
@@ -171,9 +129,9 @@ inventory::collect!(ToolRegistration);
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "schema")]
-    use schemars::JsonSchema;
+    use serde::Deserialize;
     use serde_json::{self, json};
+    use tool_schema::ToolSchema;
 
     fn add<T: std::ops::Add<Output = T> + Copy>(a: T, b: T) -> T {
         a + b
@@ -184,8 +142,7 @@ mod tests {
     fn noop() {}
     async fn async_foo() {}
 
-    #[cfg_attr(feature = "schema", derive(JsonSchema))]
-    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Serialize, Deserialize, ToolSchema)]
     struct SomeArgs {
         a: i32,
         b: i32,
@@ -270,8 +227,7 @@ mod tests {
         );
     }
 
-    #[cfg_attr(feature = "schema", derive(JsonSchema))]
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, ToolSchema)]
     struct Point {
         x: i32,
         y: i32,
@@ -326,8 +282,7 @@ mod tests {
         );
     }
 
-    #[cfg_attr(feature = "schema", derive(JsonSchema))]
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, ToolSchema)]
     struct Config {
         host: String,
         port: u16,
@@ -404,9 +359,10 @@ mod stateful_tests {
     use super::*;
     use serde_json::{self, json};
     use std::sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     };
+    use tokio::sync::Mutex;
 
     fn fc(name: &str, args: serde_json::Value) -> FunctionCall {
         FunctionCall {
@@ -487,7 +443,7 @@ mod stateful_tests {
             col.register("push", "pushes", move |t: (i32,)| {
                 let data_inner = data_push.clone();
                 async move {
-                    let mut g = data_inner.lock().unwrap();
+                    let mut g = data_inner.lock().await;
                     g.push(t.0);
                     g.len()
                 }
@@ -499,7 +455,7 @@ mod stateful_tests {
             let data_len = data.clone();
             col.register("len", "length", move |_: ()| {
                 let data_inner = data_len.clone();
-                async move { data_inner.lock().unwrap().len() }
+                async move { data_inner.lock().await.len() }
             })
             .unwrap();
         }
@@ -514,6 +470,6 @@ mod stateful_tests {
         let err = col.call(fc("push", json!([4]))).await.unwrap_err();
         assert!(matches!(err, ToolError::FunctionNotFound { .. }));
 
-        assert_eq!(data.lock().unwrap().as_slice(), &[1, 2, 3]);
+        assert_eq!(data.lock().await.as_slice(), &[1, 2, 3]);
     }
 }

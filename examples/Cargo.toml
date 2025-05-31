@@ -9,24 +9,21 @@ chrono.workspace     = true
 inventory.workspace  = true
 serde.workspace      = true
 serde_json.workspace = true
-tokio                = { workspace = true, features = ["full"] }
+tokio.workspace      = true
 
-tools    = { path = "../tools", default-features = false, features = ["schema"] }
-tools-rs = { path = "..", default-features = false, features = ["schema"] }
 
-schemars = { workspace = true, optional = true }
+tools    = { path = "../tools", default-features = false }
+tools-rs = { path = "..", default-features = false }
+
+tool_schema = { path = "../tool_schema" }
 
 [features]
 default = []
-schema  = ["dep:schemars", "tools/schema", "tools-rs/schema"]
 
 [[example]]
 name = "basic"
 path = "basic/main.rs"
 
-[[example]]
-name = "example"
-path = "example.rs"
 
 [[example]]
 name = "function_declarations"
@@ -35,3 +32,7 @@ path = "function_declarations/main.rs"
 [[example]]
 name = "schema"
 path = "schema/main.rs"
+
+[[example]]
+name = "newtype_demo"
+path = "newtype_demo/main.rs"

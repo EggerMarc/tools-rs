@@ -64,8 +64,6 @@ pub struct ToolRegistration {
     pub f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
     /// Zero-arg closure returning the *parameter* JSON-Schema
     pub param_schema: fn() -> Value,
-    /// Zero-arg closure returning the *return type* JSON-Schema
-    pub return_schema: fn() -> Value,
 }
 
 impl ToolRegistration {
@@ -74,14 +72,12 @@ impl ToolRegistration {
         doc: &'static str,
         f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
         param_schema: fn() -> Value,
-        return_schema: fn() -> Value,
     ) -> Self {
         Self {
             name,
             doc,
             f,
             param_schema,
-            return_schema,
         }
     }
 }

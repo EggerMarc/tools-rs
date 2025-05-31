@@ -2,12 +2,12 @@
 #![forbid(unsafe_code)]
 
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, Span};
 use proc_macro_error::{abort, proc_macro_error};
+use proc_macro2::{Ident, Span};
 use quote::quote;
 use syn::{
-    parse_macro_input, Attribute, Expr, ExprLit, FnArg, ItemFn, Lit, LitStr, Meta, Pat, PatIdent,
-    PatType, ReturnType, Type,
+    Attribute, Expr, ExprLit, FnArg, ItemFn, Lit, LitStr, Meta, Pat, PatIdent, PatType,
+    parse_macro_input,
 };
 
 /// Gather `///` doc-comments into a single string, trimming the leading space after `///`.
@@ -56,15 +56,8 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .unzip();
 
-    // ───────── Return type ─────────
-    let output_ty: Type = match &func.sig.output {
-        ReturnType::Type(_, ty) => (**ty).clone(),
-        ReturnType::Default => syn::parse_quote!(()),
-    };
-
     // ───────── Generated helper idents ─────────
     let wrapper_ident = Ident::new(&format!("__TOOL_INPUT_{fn_name}"), Span::call_site());
-    let flatten_fn = Ident::new(&format!("__FLATTEN_SCHEMA_{fn_name}"), Span::call_site());
     let schema_fn = Ident::new(&format!("__SCHEMA_FOR_{fn_name}"), Span::call_site());
 
     // ───────── Macro expansion ─────────
@@ -72,31 +65,12 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #func
 
         #[allow(non_camel_case_types)]
-        #[derive(::serde::Deserialize)]
-        #[cfg_attr(feature = "schema", derive(::schemars::JsonSchema))]
+        #[derive(::serde::Deserialize, ::tool_schema::ToolSchema)]
         struct #wrapper_ident { #( pub #idents : #types ),* }
 
-        #[cfg(feature = "schema")]
-        fn #flatten_fn(mut v: ::serde_json::Value) -> ::serde_json::Value {
-            use ::serde_json::Value::*;
-            if let Object(ref mut root) = v {
-                root.remove("title");
-                if let Some(Object(props)) = root.remove("properties") {
-                    root.extend(props);
-                }
-            }
-            v
-        }
-
-        #[cfg(feature = "schema")]
         #[inline(always)]
-        fn #schema_fn<T: ::schemars::JsonSchema>() -> ::serde_json::Value {
-            #flatten_fn(::serde_json::to_value(tools::schema::schema_to_json_schema::<T>()).unwrap())
-        }
-        #[cfg(not(feature = "schema"))]
-        #[inline(always)]
-        fn #schema_fn<T>() -> ::serde_json::Value {
-            ::serde_json::Value::Null
+        fn #schema_fn<T: ::tool_schema::ToolSchema>() -> ::serde_json::Value {
+            T::schema()
         }
 
         inventory::submit! {
@@ -112,7 +86,6 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
                         .map_err(|e| tools::error::ToolError::Runtime(e.to_string()))
                 }),
                 || #schema_fn::<#wrapper_ident>(),
-                || #schema_fn::<#output_ty>(),
             )
         }
     })

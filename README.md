@@ -17,6 +17,16 @@ Tools-rs is a minimal, fully-typed, JSON-driven runtime for Large Language Model
 - **Extensibility** - Proc-macro auto-registration, pluggable error model
 - **LLM Integration** - Export function declarations for LLM function calling APIs
 
+## Migration from v0.5.x
+
+**JSON Schema is now always enabled!** The `schema` feature has been deprecated and does nothing.
+
+- Remove `features = ["schema"]` from your `Cargo.toml`
+- Change `#[cfg_attr(feature = "schema", derive(ToolSchema))]` to `#[derive(ToolSchema)]`
+- Replace `MaybeJsonSchema` trait bounds with `ToolSchema`
+
+See [UPGRADE-0.6.md](UPGRADE-0.6.md) for detailed migration instructions.
+
 ## Quick Start
 
 ```rust
@@ -130,11 +140,11 @@ The generated declarations will include function name, description, parameters a
 ]
 ```
 
-With the `schema` feature enabled, this becomes full JSON Schema:
+This automatically generates full JSON Schema (always enabled in v0.6.0+):
 
 ```toml
 [dependencies]
-tools-rs = { version = "0.1.0", features = ["schema"] }
+tools-rs = "0.6.0"
 ```
 
 For a complete example of using JSON Schema with complex types, see the [schema example](examples/schema/main.rs).
@@ -150,7 +160,7 @@ cargo run --example basic
 # Run the function declarations example
 cargo run --example function_declarations
 
-# Run the schema example (requires the schema feature)
+# Run the schema example
 cargo run --example schema
 ```
 

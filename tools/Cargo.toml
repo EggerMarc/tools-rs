@@ -1,19 +1,17 @@
 [package]
 edition = "2024"
 name    = "tools"
-version = "0.3.0"
+version = "0.1.0"
 
 [dependencies]
 futures              = "0.3.31"
 inventory.workspace  = true
-schemars             = { workspace = true, features = ["derive"], optional = true }
 serde.workspace      = true
 serde_json.workspace = true
 thiserror            = "2.0.12"
 tokio                = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
-tokio-test           = "0.4.4"
+tool_schema          = { path = "../tool_schema" }
 tools_macros         = { path = "../tools_macros" }
 
 [features]
 default = []
-schema  = ["schemars"]
