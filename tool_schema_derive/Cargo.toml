@@ -1,7 +1,7 @@
 [package]
 authors      = ["Tools-rs Team"]
 description  = "Derive macro for ToolSchema trait"
-edition      = "2021"
+edition      = "2024"
 license      = "MIT"
 name         = "tool_schema_derive"
 rust-version = "1.70"

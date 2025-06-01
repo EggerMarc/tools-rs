@@ -17,7 +17,7 @@ resolver = "2"
 
 [workspace.package]
 authors      = ["Tools-rs Team"]
-edition      = "2021"
+edition      = "2024"
 license      = "MIT"
 repository   = "https://github.com/EggerMarc/toors"
 rust-version = "1.70"
