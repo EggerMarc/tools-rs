@@ -12,10 +12,9 @@ serde_json.workspace = true
 tokio.workspace      = true
 
 
-tools    = { path = "../tools", default-features = false }
-tools-rs = { path = "..", default-features = false }
-
-tool_schema = { path = "../tool_schema" }
+tools_core   = { path = "../tools_core", default-features = false }
+tools_macros = { path = "../tools_macros" }
+tools-rs     = { path = "..", default-features = false }
 
 [features]
 default = []

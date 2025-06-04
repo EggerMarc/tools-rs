@@ -1,17 +1,23 @@
 [package]
-edition = "2024"
-name    = "tools_macros"
-version = "0.1.0"
+authors      = ["Tools-rs Team"]
+description  = "Procedural macros for the tools collection system"
+edition      = "2021"
+license      = "MIT"
+name         = "tools_macros"
+repository   = "https://github.com/EggerMarc/toors"
+rust-version = "1.70"
+version      = "0.1.0"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-inventory.workspace = true
-proc-macro-error    = "1.0.4"
-proc-macro2         = "1.0.95"
-quote               = "1.0.40"
-syn                 = { version = "2.0.101", features = ["full"] }
+inventory        = "0.3.20"
+proc-macro-crate = "3.3.0"
+proc-macro-error = "1.0.4"
+proc-macro2      = "1.0.95"
+quote            = "1.0.40"
+syn              = { version = "2.0.101", features = ["full"] }
 
 [features]
 default = []

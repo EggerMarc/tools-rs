@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use std::error::Error;
 
-use tools_rs::{FunctionCall, collect_tools, function_declarations, tool};
-
-use tool_schema::ToolSchema;
+use tools_rs::{FunctionCall, collect_tools, function_declarations, tool, ToolSchema};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Domain models

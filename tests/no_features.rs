@@ -1,9 +1,6 @@
-//! Test that verifies schema generation works without any feature flags.
-//! This ensures the v0.6.0 migration was successful.
-
 use serde::{Deserialize, Serialize};
-use tool_schema::ToolSchema;
-use tools_rs::{tool, collect_tools, FunctionCall};
+use tools_rs::ToolSchema;
+use tools_rs::{FunctionCall, collect_tools, tool};
 
 #[derive(Serialize, Deserialize, ToolSchema)]
 struct TestInput {
@@ -27,29 +24,29 @@ async fn double_value(input: TestInput) -> TestOutput {
 async fn test_schema_generation_without_features() {
     // Collect tools should work
     let tools = collect_tools();
-    
+
     // Should be able to generate JSON schema
     let json_result = tools.json();
     assert!(json_result.is_ok());
-    
+
     let json = json_result.unwrap();
     assert!(json.is_array());
-    
+
     // Should contain our tool
     let tools_array = json.as_array().unwrap();
     assert!(!tools_array.is_empty());
-    
+
     // Find our double_value tool
     let double_tool = tools_array
         .iter()
-        .find(|tool| tool["function"]["name"] == "double_value")
+        .find(|tool| tool["name"] == "double_value")
         .expect("double_value tool should be registered");
-    
+
     // Verify it has proper schema
-    assert_eq!(double_tool["type"], "function");
-    assert_eq!(double_tool["function"]["name"], "double_value");
-    assert!(double_tool["function"]["parameters"].is_object());
-    
+    assert_eq!(double_tool["name"], "double_value");
+    assert_eq!(double_tool["description"], "Double the input value");
+    assert!(double_tool["parameters"].is_object());
+
     // Verify the tool actually works
     let call = FunctionCall {
         name: "double_value".to_string(),
@@ -57,10 +54,10 @@ async fn test_schema_generation_without_features() {
             "input": { "value": 21 }
         }),
     };
-    
+
     let result = tools.call(call).await;
     assert!(result.is_ok());
-    
+
     let output: TestOutput = serde_json::from_value(result.unwrap()).unwrap();
     assert_eq!(output.doubled, 42);
 }
@@ -70,7 +67,7 @@ fn test_schema_traits_available() {
     // Verify that ToolSchema trait is available and working
     let _input_schema = TestInput::schema();
     let _output_schema = TestOutput::schema();
-    
+
     // Basic types should also have schemas
     let _string_schema = String::schema();
     let _int_schema = i32::schema();

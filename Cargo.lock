@@ -109,9 +109,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tool_schema",
- "tools",
  "tools-rs",
+ "tools_core",
+ "tools_macros",
 ]
 
 [[package]]
@@ -534,40 +534,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tool_schema"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tool_schema_derive",
-]
-
-[[package]]
-name = "tool_schema_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro-crate",
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn 2.0.101",
-]
-
-[[package]]
-name = "tools"
-version = "0.1.0"
-dependencies = [
- "futures",
- "inventory",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tool_schema",
- "tools_macros",
-]
-
-[[package]]
 name = "tools-rs"
 version = "0.1.0"
 dependencies = [
@@ -575,9 +541,21 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tool_schema",
- "tools",
+ "tools_core",
  "tools_macros",
+]
+
+[[package]]
+name = "tools_core"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "inventory",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -585,6 +563,7 @@ name = "tools_macros"
 version = "0.1.0"
 dependencies = [
  "inventory",
+ "proc-macro-crate",
  "proc-macro-error",
  "proc-macro2",
  "quote",
