@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{self, Value};
 
-// Re-export once_cell for use in generated code
+// Re-export once_cell
 pub use once_cell;
 
 // ============================================================================
