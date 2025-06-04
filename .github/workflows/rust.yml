@@ -23,6 +23,6 @@ jobs:
     - name: Run tests
       run: cargo test --verbose 
     - name: Run tools_macros tests
-      run: cd tools_macro && cargo test --verbose 
+      run: cd tools_macros && cargo test --verbose 
     - name: Run tools_core tests
       run: cd tools_core && cargo test --verbose 
