@@ -376,7 +376,7 @@ We welcome contributions!
 
 ```bash
 # Clone the repository
-git clone https://github.com/EggerMarc/toors.git
+git clone https://github.com/EggerMarc/tools-rs
 cd toors
 
 # Run tests
