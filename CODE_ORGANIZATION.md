@@ -1,4 +1,4 @@
-# Toors Code Organization
+# Tools-rs Code Organization
 
 This document describes the organization of the Toors codebase following Rust best practices.
 
