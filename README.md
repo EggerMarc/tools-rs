@@ -70,7 +70,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tools-rs = "0.1.0"
+tools-rs = "0.1.1"
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
 serde_json = "1.0"
 ```

@@ -11,6 +11,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - name: Publish tools_core
+        run: cargo publish -p tools_core
+      - name: Publish tools_macros
+        run: cargo publish -p tools_macros
       - name: Publish
         run: cargo publish
         env:
