@@ -19,7 +19,7 @@ resolver = "2"
 authors      = ["Tools-rs Team"]
 edition      = "2024"
 license      = "MIT"
-repository   = "https://github.com/EggerMarc/toors"
+repository   = "https://github.com/EggerMarc/tools-rs"
 rust-version = "1.85"
 
 [workspace.dependencies]
