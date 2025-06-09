@@ -377,7 +377,7 @@ We welcome contributions!
 ```bash
 # Clone the repository
 git clone https://github.com/EggerMarc/tools-rs
-cd toors
+cd tools-rs 
 
 # Run tests
 cargo test

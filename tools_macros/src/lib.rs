@@ -1,4 +1,4 @@
-//! Procedural macros for **Toors**
+//! Procedural macros for **tools-rs**
 #![forbid(unsafe_code)]
 
 use proc_macro::TokenStream;

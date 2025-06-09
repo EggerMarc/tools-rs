@@ -4,7 +4,7 @@ description  = "Core functionality and schema generation for the tools collectio
 edition      = "2024"
 license      = "MIT"
 name         = "tools_core"
-repository   = "https://github.com/EggerMarc/toors"
+repository   = "https://github.com/EggerMarc/tools-rs"
 rust-version = "1.85"
 version      = "0.1.1"
 

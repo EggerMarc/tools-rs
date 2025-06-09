@@ -1,13 +1,13 @@
-# Toors Code Organization
+# Tools-rs Code Organization
 
-This document describes the organization of the Toors codebase following Rust best practices.
+This document describes the organization of the tools-rs codebase following Rust best practices.
 
 ## Project Structure
 
 The project is organized as a Rust workspace with two main crates:
 
 ```
-toors/
+tools-rs/
 ├── Cargo.toml              # Workspace definition and main crate
 ├── src/                    # Main crate source (tools-rs)
 │   └── lib.rs              # Re-exports and high-level API
