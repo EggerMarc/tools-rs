@@ -1,12 +1,12 @@
 [package]
 authors      = ["Tools-rs Team"]
 description  = "Procedural macros for the tools collection system"
-edition      = "2021"
+edition      = "2024"
 license      = "MIT"
 name         = "tools_macros"
 repository   = "https://github.com/EggerMarc/toors"
-rust-version = "1.70"
-version      = "0.1.0"
+rust-version = "1.85"
+version      = "0.1.1"
 
 [lib]
 proc-macro = true
