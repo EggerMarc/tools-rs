@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // println!("Final Response: {:#}", json_res);
 
-    let mut gemini = GeminiClient::new("gemini-1.5-flash".to_string());
+    let mut gemini = GeminiClient::new("gemini-2.0-flash".to_string());
     let res = gemini
         .call("What's the capital of france?".to_string())
         .await?;

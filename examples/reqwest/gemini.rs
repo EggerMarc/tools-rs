@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
+use tools_rs::ToolCollection;
 
 pub struct GeminiClient {
     url: String,
@@ -59,6 +60,16 @@ pub struct GeminiFunctionCall {
     args: Value,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct GeminiResponse {
+    candidates: Vec<GeminiCandidate>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GeminiCandidate {
+    content: GeminiContent,
+}
+
 impl GeminiClient {
     pub fn new(model_id: String) -> Self {
         Self {
@@ -72,16 +83,28 @@ impl GeminiClient {
         }
     }
 
-    pub async fn call(&mut self, prompt: String) -> reqwest::Result<GeminiContent> {
+    pub async fn call(
+        &mut self,
+        prompt: String,
+        tools: Option<ToolCollection>,
+    ) -> reqwest::Result<GeminiResponse> {
         self.history
             .contents
             .push(GeminiContent::from_string("user".to_string(), prompt));
 
-        let req = self.client.post(self.url.clone()).json(&self.history);
+        let payload = json!({
+            "contents": self.history.contents,
+        });
+        //let payload: Value = serde_json::to_value(&self.history).expect("failed to serialize");
+        println!("Second Payload: {:#?}", payload);
+        let req = self.client.post(self.url.clone()).json(&payload);
         let res = req.send().await?;
-        println!("RESPONSE: {:#?}", res);
 
-        let out = res.json::<GeminiContent>().await?;
+        let out = res.json::<GeminiResponse>().await?;
+        println!(
+            "RESPONSE: {:#?}",
+            serde_json::to_string(&out).expect("Failed to serialize")
+        );
         Ok(out)
     }
 }
