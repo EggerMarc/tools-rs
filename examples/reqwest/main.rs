@@ -1,7 +1,9 @@
+use gemini::GeminiClient;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tools_rs::{FunctionCall, collect_tools, tool};
+mod gemini;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ToolError {
@@ -28,7 +30,7 @@ async fn get_weather(lat: String, lon: String) -> Result<Value, ToolError> {
     .await?;
 
     let json = json!(res);
-    println!("Json: {:?}", json);
+    // println!("Json: {:?}", json);
     Ok(json)
 }
 
@@ -51,23 +53,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }]
     });
 
-    println!("Payload: {:#?}", payload);
-
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
         std::env::var("GEMINI_API_KEY")?
     );
-
-    let mut res_text = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await?
-        .text()
-        .await?;
+    let raw_req = client.post(&url).json(&payload);
+    println!("First Payload: {:#?}", payload);
+    let mut res_text = raw_req.send().await?.text().await?;
     let mut json_res: Value = serde_json::from_str(&res_text)?;
 
-    println!("Initial Response: {}", res_text);
+    // println!("Initial Response: {}", res_text);
 
     // Look for a function call in any candidate and any part
     let mut function_call: Option<Value> = None;
@@ -98,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let name = fc["name"].as_str().unwrap_or("<unknown>");
         let args = fc["args"].clone();
 
-        println!("Calling function: {} with args: {}", name, args);
+        // println!("Calling function: {} with args: {}", name, args);
 
         let func_res = col
             .call(FunctionCall {
@@ -135,6 +130,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         json_res = serde_json::from_str(&res_text)?;
     }
 
-    println!("Final Response: {:#}", json_res);
+    // println!("Final Response: {:#}", json_res);
+
+    let mut gemini = GeminiClient::new("gemini-1.5-flash".to_string());
+    let res = gemini
+        .call("What's the capital of france?".to_string())
+        .await?;
+    //println!("Testing answer: {:#?}", res);
     Ok(())
 }
