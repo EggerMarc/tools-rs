@@ -58,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("GEMINI_API_KEY")?
     );
     let raw_req = client.post(&url).json(&payload);
-    println!("First Payload: {:#?}", payload);
+    // println!("First Payload: {:#?}", payload);
     let mut res_text = raw_req.send().await?.text().await?;
     let mut json_res: Value = serde_json::from_str(&res_text)?;
 
@@ -134,8 +134,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut gemini = GeminiClient::new("gemini-2.0-flash".to_string());
     let res = gemini
-        .call("What's the capital of france?".to_string())
+        .call(
+            "What's the weather like in long: 52.2 and lat: 48.1".to_string(),
+            Some(col),
+        )
         .await?;
-    //println!("Testing answer: {:#?}", res);
+
+    println!(
+        "Testing answer: {:?}",
+        serde_json::to_string(&res).expect("Failed to print out")
+    );
     Ok(())
 }

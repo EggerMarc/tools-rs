@@ -94,17 +94,15 @@ impl GeminiClient {
 
         let payload = json!({
             "contents": self.history.contents,
+            "tools": [{
+                "functionDeclarations": tools.map(|t| t.json().unwrap())
+            }]
         });
-        //let payload: Value = serde_json::to_value(&self.history).expect("failed to serialize");
-        println!("Second Payload: {:#?}", payload);
+
+        println!("Payload: {:#?}", payload);
         let req = self.client.post(self.url.clone()).json(&payload);
         let res = req.send().await?;
-
         let out = res.json::<GeminiResponse>().await?;
-        println!(
-            "RESPONSE: {:#?}",
-            serde_json::to_string(&out).expect("Failed to serialize")
-        );
         Ok(out)
     }
 }
