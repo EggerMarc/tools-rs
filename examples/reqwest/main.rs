@@ -34,6 +34,12 @@ async fn get_weather(lat: String, lon: String) -> Result<Value, ToolError> {
     Ok(json)
 }
 
+#[tool]
+/// Counts the number of occurrences of a substring in a string
+async fn count_substring(s: String, sub: String) -> i32 {
+    s.matches(&sub).count() as i32
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let col = collect_tools();
@@ -133,15 +139,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("Final Response: {:#}", json_res);
 
     let mut gemini = GeminiClient::new("gemini-2.0-flash".to_string());
-    let res = gemini
-        .call(
-            "What's the weather like in long: 52.2 and lat: 48.1".to_string(),
-            Some(col),
-        )
-        .await?;
+    let res = gemini.call("How many letters z appear in `zzzzzzzzz`".to_string(), Some(col)).await?;
 
     println!(
-        "Testing answer: {:?}",
+        "Final answer: {:?}",
         serde_json::to_string(&res).expect("Failed to print out")
     );
     Ok(())

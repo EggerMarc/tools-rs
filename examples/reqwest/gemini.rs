@@ -87,7 +87,7 @@ impl GeminiClient {
         &mut self,
         prompt: String,
         tools: Option<ToolCollection>,
-    ) -> reqwest::Result<GeminiResponse> {
+    ) -> reqwest::Result<()> {
         self.history
             .contents
             .push(GeminiContent::from_string("user".to_string(), prompt));
@@ -102,7 +102,9 @@ impl GeminiClient {
         println!("Payload: {:#?}", payload);
         let req = self.client.post(self.url.clone()).json(&payload);
         let res = req.send().await?;
-        let out = res.json::<GeminiResponse>().await?;
-        Ok(out)
+        println!("Result: {}", res.text().await?);
+        Ok(())
+        //let out = res.json::<GeminiResponse>().await?;
+        //Ok(out)
     }
 }
