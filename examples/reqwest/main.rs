@@ -95,7 +95,7 @@ async fn gemini_chat(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let response = gemini_chat(
-        "How many letter rs are in the word ratatouille. Also, what's the weather like today in Paris?",
+        "How many letter rs are in the word ratatouille. Also, what's the weather like today in Paris? Could you also send an email to bob (bob@gmail.com) saying how much I liked yesterday's invite?",
         &collect_tools(),
         &std::env::var("GEMINI_API_KEY")?,
     )
