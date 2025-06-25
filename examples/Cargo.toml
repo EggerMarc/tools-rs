@@ -15,6 +15,7 @@ tokio.workspace      = true
 tools_core   = { path = "../tools_core", default-features = false }
 tools_macros = { path = "../tools_macros" }
 tools-rs     = { path = "..", default-features = false }
+reqwest = { version = "0.12", features = ["json"] }
 
 [features]
 default = []
@@ -35,3 +36,7 @@ path = "schema/main.rs"
 [[example]]
 name = "newtype_demo"
 path = "newtype_demo/main.rs"
+
+[[example]]
+name = "reqwest"
+path = "reqwest/main.rs"
