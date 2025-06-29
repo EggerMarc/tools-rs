@@ -40,3 +40,7 @@ path = "newtype_demo/main.rs"
 [[example]]
 name = "reqwest"
 path = "reqwest/main.rs"
+
+[[example]]
+name = "chatbot"
+path = "chatbot/main.rs"
