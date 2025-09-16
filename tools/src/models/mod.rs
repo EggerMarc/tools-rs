@@ -3,7 +3,7 @@
 //! This module contains the core data structures used by the tools-rs library.
 
 use futures::future::BoxFuture;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::any::TypeId;
 use std::borrow::Cow;
@@ -31,12 +31,24 @@ pub trait Tool {
 }
 
 /// Represents a function call with a name and JSON arguments.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FunctionCall {
+    /// ID Of the function call
+    pub id: Option<String>,
     /// The name of the function to call
     pub name: String,
     /// The JSON arguments to pass to the function
     pub arguments: Value,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FunctionResponse {
+    /// ID of the function call
+    pub id: Option<String>,
+    /// Name of the function
+    pub name: String,
+    /// JSON Response of the function
+    pub result: Value,
 }
 
 /// A type representing a tool function

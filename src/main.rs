@@ -1,7 +1,7 @@
 use serde_json::json;
-use tools_rs::collect_tools;
 use tools::FunctionCall;
 use tools_macros::tool;
+use tools_rs::collect_tools;
 
 #[tool]
 /// Adds two numbers (pair).
@@ -21,18 +21,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sum = hub
         .call(FunctionCall {
+            id: None,
             name: "add".into(),
             arguments: json!({ "pair": [3, 4] }),
         })
-        .await?;
+        .await?
+        .result;
     println!("add → {sum}"); // 7
 
     let hi = hub
         .call(FunctionCall {
+            id: None,
             name: "greet".into(),
             arguments: json!({ "name": "Alice" }),
         })
-        .await?;
+        .await?
+        .result;
     println!("greet → {hi}"); // "Hello, Alice!"
 
     Ok(())

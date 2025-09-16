@@ -10,7 +10,8 @@ pub mod schema;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use futures::{FutureExt, future::BoxFuture};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use models::FunctionResponse;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{self, Value};
 
 pub use error::{DeserializationError, ToolError};
@@ -108,15 +109,22 @@ impl ToolCollection {
         Ok(self)
     }
 
-    pub async fn call(&self, call: FunctionCall) -> Result<Value, ToolError> {
-        let FunctionCall { name, arguments } = call;
+    pub async fn call(&self, call: FunctionCall) -> Result<FunctionResponse, ToolError> {
+        let id = "".to_string();
+        let FunctionCall {
+            id,
+            name,
+            arguments,
+        } = call;
         let async_func = self
             .funcs
             .get(name.as_str())
             .ok_or(ToolError::FunctionNotFound {
-                name: Cow::Owned(name),
+                name: Cow::Owned(name.clone()),
             })?;
-        async_func(arguments).await
+        let result = async_func(arguments).await?;
+
+        Ok(FunctionResponse { id, name, result })
     }
 
     pub fn unregister(&mut self, name: &str) -> Result<(), ToolError> {
