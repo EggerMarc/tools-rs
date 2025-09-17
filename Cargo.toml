@@ -20,7 +20,7 @@ authors      = ["Tools-rs Team"]
 edition      = "2024"
 license      = "MIT"
 repository   = "https://github.com/EggerMarc/tools-rs"
-rust-version = "1.85"
+rust-version = "1.70"
 
 [workspace.dependencies]
 chrono     = "0.4.41"
