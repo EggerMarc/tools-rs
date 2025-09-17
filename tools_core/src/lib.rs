@@ -265,13 +265,11 @@ impl fmt::Display for CallId {
     }
 }
 
+/// Represents a function response with name and arguments
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct FunctionResponse {
-    /// ID of the function call
     pub id: Option<CallId>,
-    /// Name of the function
     pub name: String,
-    /// JSON Response of the function
     pub result: Value,
 }
 

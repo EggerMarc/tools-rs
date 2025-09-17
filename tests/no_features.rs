@@ -48,17 +48,17 @@ async fn test_schema_generation_without_features() {
     assert!(double_tool["parameters"].is_object());
 
     // Verify the tool actually works
-    let call = FunctionCall {
-        name: "double_value".to_string(),
-        arguments: serde_json::json!({
+    let call = FunctionCall::new(
+        "double_value".to_string(),
+        serde_json::json!({
             "input": { "value": 21 }
         }),
-    };
+    );
 
-    let result = tools.call(call).await;
-    assert!(result.is_ok());
+    let response = tools.call(call).await;
+    assert!(response.is_ok());
 
-    let output: TestOutput = serde_json::from_value(result.unwrap()).unwrap();
+    let output: TestOutput = serde_json::from_value(response.unwrap().result).unwrap();
     assert_eq!(output.doubled, 42);
 }
 

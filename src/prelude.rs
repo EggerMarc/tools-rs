@@ -14,7 +14,10 @@ pub use crate::{
 };
 
 // Essential types
-pub use crate::{FunctionCall, FunctionDecl, ToolCollection, ToolError, ToolMetadata, ToolSchema};
+pub use crate::{
+    FunctionCall, FunctionDecl, FunctionResponse, ToolCollection, ToolError, ToolMetadata,
+    ToolSchema,
+};
 
 // Macros
 pub use crate::tool;
