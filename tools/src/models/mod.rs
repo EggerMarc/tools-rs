@@ -3,7 +3,7 @@
 //! This module contains the core data structures used by the tools-rs library.
 
 use futures::future::BoxFuture;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::any::TypeId;
 use std::borrow::Cow;
@@ -30,21 +30,60 @@ pub trait Tool {
     fn signature(&self) -> ToolMetadata;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CallId(uuid::Uuid);
+
+impl CallId {
+    pub fn new() -> CallId {
+        CallId(uuid::Uuid::new_v4())
+    }
+}
+
+impl<'de> Deserialize<'de> for CallId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let uuid = uuid::Uuid::parse_str(&s).map_err(serde::de::Error::custom)?;
+        Ok(CallId(uuid))
+    }
+}
+
+impl Serialize for CallId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
 /// Represents a function call with a name and JSON arguments.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct FunctionCall {
     /// ID Of the function call
-    pub id: Option<String>,
+    pub id: Option<CallId>,
     /// The name of the function to call
     pub name: String,
     /// The JSON arguments to pass to the function
     pub arguments: Value,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+impl FunctionCall {
+    pub fn new(name: String, arguments: Value) -> FunctionCall {
+        FunctionCall {
+            id: None,
+            name,
+            arguments,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct FunctionResponse {
     /// ID of the function call
-    pub id: Option<String>,
+    pub id: Option<CallId>,
     /// Name of the function
     pub name: String,
     /// JSON Response of the function

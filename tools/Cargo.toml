@@ -23,6 +23,7 @@ tokio      = { version = "1.44.2", features = ["macros", "rt-multi-thread", "tim
 tokio-test = "0.4.4"
 
 tools_macros = { path = "../tools_macros" }
+uuid = { version = "1.18.1", features = ["v4"] }
 
 # ────────────────────────────────────────────────────────────────
 # Cargo feature flags

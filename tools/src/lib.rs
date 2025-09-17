@@ -18,6 +18,8 @@ pub use error::{DeserializationError, ToolError};
 pub use models::{FunctionCall, Tool, ToolFunc, ToolMetadata, ToolRegistration, TypeSignature};
 pub use schema::{FunctionDecl, schema_to_json_schema};
 
+use crate::models::CallId;
+
 #[cfg(feature = "schema")]
 pub trait MaybeJsonSchema: schemars::JsonSchema {}
 #[cfg(feature = "schema")]
@@ -110,7 +112,6 @@ impl ToolCollection {
     }
 
     pub async fn call(&self, call: FunctionCall) -> Result<FunctionResponse, ToolError> {
-        let id = "".to_string();
         let FunctionCall {
             id,
             name,
@@ -181,6 +182,7 @@ mod tests {
     use super::*;
     #[cfg(feature = "schema")]
     use schemars::JsonSchema;
+    use serde::Deserialize;
     use serde_json::{self, json};
 
     fn add<T: std::ops::Add<Output = T> + Copy>(a: T, b: T) -> T {
@@ -201,10 +203,7 @@ mod tests {
     fn using_args(_a: SomeArgs) {}
 
     fn fc(name: &str, args: serde_json::Value) -> FunctionCall {
-        FunctionCall {
-            name: name.to_string(),
-            arguments: args,
-        }
+        FunctionCall::new(name.to_string(), args)
     }
 
     #[tokio::test]
@@ -235,25 +234,35 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            collection.call(fc("add", json!([1, 2]))).await.unwrap(),
+            collection
+                .call(fc("add", json!([1, 2])))
+                .await
+                .unwrap()
+                .result,
             json!(3)
         );
         assert_eq!(
             collection
                 .call(fc("concat", json!(["hello", "world"])))
                 .await
-                .unwrap(),
+                .unwrap()
+                .result,
             json!("helloworld")
         );
         assert_eq!(
-            collection.call(fc("noop", json!(null))).await.unwrap(),
+            collection
+                .call(fc("noop", json!(null)))
+                .await
+                .unwrap()
+                .result,
             json!(null)
         );
         assert_eq!(
             collection
                 .call(fc("complex_args", json!({ "a": 1, "b": 2 })))
                 .await
-                .unwrap(),
+                .unwrap()
+                .result,
             json!(null)
         );
     }
@@ -269,11 +278,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            col.call(fc("is_even", json!([4]))).await.unwrap(),
+            col.call(fc("is_even", json!([4]))).await.unwrap().result,
             json!(true)
         );
         assert_eq!(
-            col.call(fc("is_even", json!([3]))).await.unwrap(),
+            col.call(fc("is_even", json!([3]))).await.unwrap().result,
             json!(false)
         );
     }
@@ -296,7 +305,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            col.call(fc("create_point", json!([10, 20]))).await.unwrap(),
+            col.call(fc("create_point", json!([10, 20])))
+                .await
+                .unwrap()
+                .result,
             json!({ "x": 10, "y": 20 })
         );
     }
@@ -307,7 +319,10 @@ mod tests {
         col.register("square", "Squares", |t: (i32,)| async move { t.0 * t.0 })
             .unwrap();
 
-        assert_eq!(col.call(fc("square", json!([5]))).await.unwrap(), json!(25));
+        assert_eq!(
+            col.call(fc("square", json!([5]))).await.unwrap().result,
+            json!(25)
+        );
     }
 
     #[tokio::test]
@@ -329,7 +344,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            col.call(fc("sum", json!([[1, 2, 3, 4]]))).await.unwrap(),
+            col.call(fc("sum", json!([[1, 2, 3, 4]])))
+                .await
+                .unwrap()
+                .result,
             json!(10)
         );
     }
@@ -355,7 +373,8 @@ mod tests {
                 json!({ "host": "localhost", "port": 8080 })
             ))
             .await
-            .unwrap(),
+            .unwrap()
+            .result,
             json!("localhost:8080")
         );
     }
@@ -385,7 +404,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            col.call(fc("greet", json!(["Alice"]))).await.unwrap(),
+            col.call(fc("greet", json!(["Alice"])))
+                .await
+                .unwrap()
+                .result,
             json!("Hello, Alice!")
         );
     }
@@ -401,7 +423,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            col.call(fc("async_foo", json!(null))).await.unwrap(),
+            col.call(fc("async_foo", json!(null))).await.unwrap().result,
             json!(null)
         );
     }
@@ -418,6 +440,7 @@ mod stateful_tests {
 
     fn fc(name: &str, args: serde_json::Value) -> FunctionCall {
         FunctionCall {
+            id: Some(CallId::new()),
             name: name.to_string(),
             arguments: args,
         }
@@ -446,10 +469,22 @@ mod stateful_tests {
             .unwrap();
         }
 
-        assert_eq!(col.call(fc("inc", json!(null))).await.unwrap(), json!(1));
-        assert_eq!(col.call(fc("inc", json!(null))).await.unwrap(), json!(2));
-        assert_eq!(col.call(fc("inc", json!(null))).await.unwrap(), json!(3));
-        assert_eq!(col.call(fc("get", json!(null))).await.unwrap(), json!(3));
+        assert_eq!(
+            col.call(fc("inc", json!(null))).await.unwrap().result,
+            json!(1)
+        );
+        assert_eq!(
+            col.call(fc("inc", json!(null))).await.unwrap().result,
+            json!(2)
+        );
+        assert_eq!(
+            col.call(fc("inc", json!(null))).await.unwrap().result,
+            json!(3)
+        );
+        assert_eq!(
+            col.call(fc("get", json!(null))).await.unwrap().result,
+            json!(3)
+        );
     }
 
     #[tokio::test]
@@ -512,10 +547,22 @@ mod stateful_tests {
             .unwrap();
         }
 
-        assert_eq!(col.call(fc("push", json!([1]))).await.unwrap(), json!(1));
-        assert_eq!(col.call(fc("push", json!([2]))).await.unwrap(), json!(2));
-        assert_eq!(col.call(fc("push", json!([3]))).await.unwrap(), json!(3));
-        assert_eq!(col.call(fc("len", json!(null))).await.unwrap(), json!(3));
+        assert_eq!(
+            col.call(fc("push", json!([1]))).await.unwrap().result,
+            json!(1)
+        );
+        assert_eq!(
+            col.call(fc("push", json!([2]))).await.unwrap().result,
+            json!(2)
+        );
+        assert_eq!(
+            col.call(fc("push", json!([3]))).await.unwrap().result,
+            json!(3)
+        );
+        assert_eq!(
+            col.call(fc("len", json!(null))).await.unwrap().result,
+            json!(3)
+        );
 
         col.unregister("push").unwrap();
 
