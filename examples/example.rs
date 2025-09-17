@@ -47,36 +47,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ------ add ----------------------------------------------------------
     let sum = tools
-        .call(FunctionCall {
-            name: "add".into(),
-            arguments: json!({ "pair": [5, 7] }), //  👈  field name = pair
-        })
+        .call(FunctionCall::new(
+            "add".into(),
+            json!({ "pair": [5, 7] }), //  👈  field name = pair
+        ))
         .await?;
-    println!("\nAdd result: {}", sum);
+    println!("\nAdd result: {}", sum.result);
 
     // ------ calculate ----------------------------------------------------
     let calc = tools
-        .call(FunctionCall {
-            name: "calculate".into(),
-            arguments: json!({
+        .call(FunctionCall::new(
+            "calculate".into(),
+            json!({
                 "req": {                     // 👈  field name = req
                     "operation": "multiply",
                     "a": 3.5,
                     "b": 2.0
                 }
             }),
-        })
+        ))
         .await?;
-    println!("Calculate result: {}", calc);
+    println!("Calculate result: {}", calc.result);
 
     // ------ get_weather --------------------------------------------------
     let weather = tools
-        .call(FunctionCall {
-            name: "get_weather".into(),
-            arguments: json!({ "location": "London" }), // 👈  field name = location
-        })
+        .call(FunctionCall::new(
+            "get_weather".into(),
+            json!({ "location": "London" }), // 👈  field name = location
+        ))
         .await?;
-    println!("Weather result: {}", weather);
+    println!("Weather result: {}", weather.result);
 
     let decls = tools.json()?; // now `decls: serde_json::Value`
     println!(

@@ -18,8 +18,6 @@ pub use error::{DeserializationError, ToolError};
 pub use models::{FunctionCall, Tool, ToolFunc, ToolMetadata, ToolRegistration, TypeSignature};
 pub use schema::{FunctionDecl, schema_to_json_schema};
 
-use crate::models::CallId;
-
 #[cfg(feature = "schema")]
 pub trait MaybeJsonSchema: schemars::JsonSchema {}
 #[cfg(feature = "schema")]

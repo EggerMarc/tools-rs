@@ -9,8 +9,8 @@
 //! those fields are `null`, but the public surface stays identical.
 
 pub use tools::{
-    schema::{schema_to_json_schema, FunctionDecl},
     FunctionCall, ToolCollection, ToolError, ToolRegistration, TypeSignature,
+    schema::{FunctionDecl, schema_to_json_schema},
 };
 
 pub use tools_macros::tool;
@@ -50,13 +50,10 @@ mod tests {
         let hub = collect_tools();
 
         let result = hub
-            .call(FunctionCall {
-                name: "add".into(),
-                arguments: json!({ "a": 5, "b": 7 }),
-            })
+            .call(FunctionCall::new("add".into(), json!({ "a": 5, "b": 7 })))
             .await
             .unwrap();
 
-        assert_eq!(result, json!(12));
+        assert_eq!(result.result, json!(12));
     }
 }

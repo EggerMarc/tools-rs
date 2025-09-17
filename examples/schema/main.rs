@@ -118,11 +118,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let created = tools
-        .call(FunctionCall {
-            name: "create_person".into(),
-            arguments: json!({ "person": alice }),
-        })
-        .await?; // ◀ ToolError → Box<dyn Error>
+        .call(FunctionCall::new(
+            "create_person".into(),
+            json!({ "person": alice }),
+        ))
+        .await?
+        .result; // ◀ ToolError → Box<dyn Error>
 
     println!("\nCreated person (runtime): {created}");
 
@@ -141,11 +142,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let results = tools
-        .call(FunctionCall {
-            name: "search".into(),
-            arguments: json!({ "request": req }),
-        })
-        .await?; // ◀ same
+        .call(FunctionCall::new(
+            "search".into(),
+            json!({ "request": req }),
+        ))
+        .await?
+        .result; // ◀ same
 
     println!("\nSearch results (runtime): {results}");
 

@@ -2,9 +2,10 @@
 //!
 //! This module contains the core data structures used by the tools-rs library.
 
+use core::fmt;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{Value, to_string_pretty};
 use std::any::TypeId;
 use std::borrow::Cow;
 
@@ -39,6 +40,12 @@ impl CallId {
     }
 }
 
+impl Default for CallId {
+    fn default() -> Self {
+        CallId::new()
+    }
+}
+
 impl<'de> Deserialize<'de> for CallId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -59,6 +66,12 @@ impl Serialize for CallId {
     }
 }
 
+impl fmt::Display for CallId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Represents a function call with a name and JSON arguments.
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct FunctionCall {
@@ -73,7 +86,7 @@ pub struct FunctionCall {
 impl FunctionCall {
     pub fn new(name: String, arguments: Value) -> FunctionCall {
         FunctionCall {
-            id: None,
+            id: Some(CallId::new()),
             name,
             arguments,
         }
@@ -88,6 +101,27 @@ pub struct FunctionResponse {
     pub name: String,
     /// JSON Response of the function
     pub result: Value,
+}
+
+impl fmt::Display for FunctionResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id_str = self
+            .id
+            .as_ref()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "<none>".to_string());
+
+        let pretty_result =
+            to_string_pretty(&self.result).unwrap_or_else(|_| "<invalid json>".to_string());
+
+        write!(
+            f,
+            "FunctionResponse {{\n  id: {},\n  name: \"{}\",\n  result: {}\n}}",
+            id_str,
+            self.name,
+            pretty_result.replace("\n", "\n  ") // indent JSON
+        )
+    }
 }
 
 /// A type representing a tool function

@@ -33,11 +33,3 @@ rust-version = "1.70"
 [features]
 default = []
 schema = ["tools/schema", "dep:schemars"]
-
-[workspace.dependencies]
-inventory    = "0.3.20"
-serde        = { version = "1.0.219", features = ["derive"] }
-serde_json   = "1.0.140"
-tokio        = { version = "1.44.2", features = ["rt-multi-thread", "macros"] }
-chrono       = "0.4.34"
-schemars     = "0.8.16"

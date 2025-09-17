@@ -38,27 +38,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hub = collect_tools();
 
     let sum = hub
-        .call(FunctionCall {
-            name: "add".into(),
-            arguments: json!({ "pair": [3, 4] }),
-        })
-        .await?;
+        .call(FunctionCall::new("add".into(), json!({ "pair": [3, 4] })))
+        .await?
+        .result;
     println!("add(3, 4) → {sum}");
 
     let greeting = hub
-        .call(FunctionCall {
-            name: "greet".into(),
-            arguments: json!({ "name": "World" }),
-        })
-        .await?;
+        .call(FunctionCall::new(
+            "greet".into(),
+            json!({ "name": "World" }),
+        ))
+        .await?
+        .result;
     println!("greet(\"World\") → {greeting}");
 
     let fib = hub
-        .call(FunctionCall {
-            name: "fibonacci".into(),
-            arguments: json!({ "n": 10 }),
-        })
-        .await?;
+        .call(FunctionCall::new("fibonacci".into(), json!({ "n": 10 })))
+        .await?
+        .result;
     println!("fibonacci(10) → {fib}");
 
     println!("\nAvailable tools:");
