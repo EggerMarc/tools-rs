@@ -41,19 +41,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tools = collect_tools();
 
     let sum = tools
-        .call(FunctionCall {
-            name: "add".into(),
-            arguments: json!({ "pair": [3, 4] }),
-        })
-        .await?;
+        .call(FunctionCall::new(
+            "add".into(),
+            json!({ "pair": [3, 4] }),
+        ))
+        .await?.result;
     println!("add → {sum}");  // Outputs: "add → 7"
 
     let hi = tools
-        .call(FunctionCall {
-            name: "greet".into(),
-            arguments: json!({ "name": "Alice" }),
-        })
-        .await?;
+        .call(FunctionCall::new(
+            "greet".into(),
+            json!({ "name": "Alice" }),
+        ))
+        .await?.result;
     println!("greet → {hi}");  // Outputs: "greet → \"Hello, Alice!\""
 
     // Export function declarations for LLM APIs
@@ -171,6 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Call the manually registered tool
     let result = tools.call(tools_rs::FunctionCall {
+        id: None, // Refers to the call ID
         name: "multiply".to_string(),
         arguments: json!({"a": 6, "b": 7}),
     }).await?;
@@ -254,7 +255,8 @@ Each example demonstrates different aspects of the framework:
 ### Core Types
 
 - `ToolCollection` - Container for registered tools with execution capabilities
-- `FunctionCall` - Represents a tool invocation with name and arguments
+- `FunctionCall` - Represents a tool invocation with id, name, and arguments
+- `FunctionResponse` - Represents the response of a tool invocation with matching id to call, name, and result
 - `ToolError` - Comprehensive error type for tool operations
 - `ToolSchema` - Trait for automatic JSON schema generation
 - `ToolRegistration` - Internal representation of registered tools
@@ -277,11 +279,11 @@ use serde_json::json;
 async fn main() {
     let tools = collect_tools();
 
-    match tools.call(FunctionCall {
-        name: "nonexistent".to_string(),
-        arguments: json!({}),
-    }).await {
-        Ok(result) => println!("Result: {}", result),
+    match tools.call(FunctionCall::new(
+        "nonexistent".to_string(),
+        json!({}),
+    )).await {
+        Ok(response) => println!("Result: {}", response.result),
         Err(ToolError::FunctionNotFound { name }) => {
             println!("Tool '{}' not found", name);
         },
@@ -327,7 +329,7 @@ let declarations = function_declarations()?;
 
 // Use typed parameters to avoid repeated JSON parsing
 use tools_rs::call_tool_with;
-let result = call_tool_with("my_tool", &my_typed_args).await?;
+let result = call_tool_with("my_tool", &my_typed_args).await?.result;
 ```
 
 ## Troubleshooting
