@@ -6,7 +6,7 @@ license      = "MIT"
 name         = "tools_core"
 repository   = "https://github.com/EggerMarc/tools-rs"
 rust-version = "1.85"
-version      = "0.1.1"
+version      = "0.1.2"
 
 
 [dependencies]
