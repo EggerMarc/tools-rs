@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use std::error::Error;
 
-use tools_rs::{FunctionCall, collect_tools, function_declarations, tool, ToolSchema};
+use tools_rs::{FunctionCall, ToolSchema, collect_tools, function_declarations, tool};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Domain models
@@ -157,10 +157,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .ok_or("function_declarations() did not return a JSON array")?;
 
     // The declarations already come in the correct OpenAI format
-    let tools_field: Vec<JsonValue> = decl_array
-        .iter()
-        .cloned()
-        .collect();
+    let tools_field: Vec<JsonValue> = decl_array.iter().cloned().collect();
 
     let chat_request = json!({
         "model": "gpt-4o",
@@ -185,11 +182,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let created = tools
-        .call(FunctionCall {
-            name: "create_person".into(),
-            arguments: json!({ "person": alice }),
-        })
-        .await?; // ToolError → Box<dyn Error>
+        .call(FunctionCall::new(
+            "create_person".into(),
+            json!({ "person": alice }),
+        ))
+        .await?
+        .result; // ◀ ToolError → Box<dyn Error>
 
     println!("\nCreated person (runtime): {created}");
 
@@ -208,11 +206,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let results = tools
-        .call(FunctionCall {
-            name: "search".into(),
-            arguments: json!({ "request": req }),
-        })
-        .await?;
+        .call(FunctionCall::new(
+            "search".into(),
+            json!({ "request": req }),
+        ))
+        .await?
+        .result; // ◀ same
 
     println!("\nSearch results (runtime): {results}");
 

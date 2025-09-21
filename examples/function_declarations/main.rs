@@ -120,27 +120,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // — 4. Runtime calls (same code path the LLM would hit) —
     let date = tools
-        .call(FunctionCall {
-            name: "today".into(),
-            arguments: json!({}),
-        })
-        .await?;
+        .call(FunctionCall::new("today".into(), json!({})))
+        .await?
+        .result;
     println!("\nToday  : {date}");
 
     let fact = tools
-        .call(FunctionCall {
-            name: "factorial".into(),
-            arguments: json!({ "n": 5 }),
-        })
-        .await?;
+        .call(FunctionCall::new("factorial".into(), json!({ "n": 5 })))
+        .await?
+        .result;
     println!("5!     : {fact}");
 
     let meteo = tools
-        .call(FunctionCall {
-            name: "weather".into(),
-            arguments: json!({ "location": "London" }),
-        })
-        .await?;
+        .call(FunctionCall::new(
+            "weather".into(),
+            json!({ "location": "London" }),
+        ))
+        .await?
+        .result;
     println!("Weather: {meteo}");
 
     Ok(())

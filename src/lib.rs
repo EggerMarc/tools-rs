@@ -47,8 +47,8 @@
 
 // Re-export core functionality
 pub use tools_core::{
-    DeserializationError, FunctionCall, FunctionDecl, ToolCollection, ToolError, ToolMetadata,
-    ToolRegistration, TypeSignature,
+    DeserializationError, FunctionCall, FunctionDecl, FunctionResponse, ToolCollection, ToolError,
+    ToolMetadata, ToolRegistration, TypeSignature,
 };
 
 // Re-export schema functionality (trait from tools_core)
@@ -128,12 +128,9 @@ pub fn function_declarations() -> Result<serde_json::Value, ToolError> {
 pub async fn call_tool(
     name: &str,
     arguments: serde_json::Value,
-) -> Result<serde_json::Value, ToolError> {
+) -> Result<FunctionResponse, ToolError> {
     let tools = collect_tools();
-    let call = FunctionCall {
-        name: name.to_string(),
-        arguments,
-    };
+    let call = FunctionCall::new(name.to_string(), arguments);
     tools.call(call).await
 }
 
@@ -164,7 +161,7 @@ pub async fn call_tool(
 pub async fn call_tool_with<T: serde::Serialize>(
     name: &str,
     args: &T,
-) -> Result<serde_json::Value, ToolError> {
+) -> Result<FunctionResponse, ToolError> {
     let arguments = serde_json::to_value(args)
         .map_err(|e| ToolError::Runtime(format!("Failed to serialize arguments: {}", e)))?;
     call_tool(name, arguments).await
@@ -188,11 +185,8 @@ pub async fn call_tool_by_name(
     collection: &ToolCollection,
     name: &str,
     arguments: serde_json::Value,
-) -> Result<serde_json::Value, ToolError> {
-    let call = FunctionCall {
-        name: name.to_string(),
-        arguments,
-    };
+) -> Result<FunctionResponse, ToolError> {
+    let call = FunctionCall::new(name.to_string(), arguments);
     collection.call(call).await
 }
 
@@ -213,7 +207,7 @@ pub async fn call_tool_with_args<T: serde::Serialize>(
     collection: &ToolCollection,
     name: &str,
     args: &T,
-) -> Result<serde_json::Value, ToolError> {
+) -> Result<FunctionResponse, ToolError> {
     let arguments = serde_json::to_value(args)
         .map_err(|e| ToolError::Runtime(format!("Failed to serialize arguments: {}", e)))?;
     call_tool_by_name(collection, name, arguments).await
@@ -236,7 +230,6 @@ pub fn list_tool_names(collection: &ToolCollection) -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
-
     #[test]
     fn test_prelude_exports() {
         // Ensure prelude exports don't cause compilation errors

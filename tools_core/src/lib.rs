@@ -1,11 +1,12 @@
 #![deny(unsafe_code)]
 
+use core::fmt;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
-use futures::{future::BoxFuture, FutureExt};
+use futures::{FutureExt, future::BoxFuture};
 use once_cell::sync::Lazy;
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{self, Value};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
+use serde_json::{self, Value, to_string_pretty};
 
 // Re-export once_cell
 pub use once_cell;
@@ -206,10 +207,91 @@ impl From<serde_json::Error> for DeserializationError {
 // ============================================================================
 
 /// Represents a function call with name and arguments
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct FunctionCall {
+    pub id: Option<CallId>,
     pub name: String,
     pub arguments: Value,
+}
+
+impl FunctionCall {
+    pub fn new(name: String, arguments: Value) -> FunctionCall {
+        FunctionCall {
+            id: Some(CallId::new()),
+            name,
+            arguments,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CallId(uuid::Uuid);
+
+impl CallId {
+    pub fn new() -> CallId {
+        CallId(uuid::Uuid::new_v4())
+    }
+}
+
+impl Default for CallId {
+    fn default() -> Self {
+        CallId::new()
+    }
+}
+
+impl<'de> Deserialize<'de> for CallId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let uuid = uuid::Uuid::parse_str(&s).map_err(serde::de::Error::custom)?;
+        Ok(CallId(uuid))
+    }
+}
+
+impl Serialize for CallId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl fmt::Display for CallId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Represents a function response with name and arguments
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct FunctionResponse {
+    pub id: Option<CallId>,
+    pub name: String,
+    pub result: Value,
+}
+
+impl fmt::Display for FunctionResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id_str = self
+            .id
+            .as_ref()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "<none>".to_string());
+
+        let pretty_result =
+            to_string_pretty(&self.result).unwrap_or_else(|_| "<invalid json>".to_string());
+
+        write!(
+            f,
+            "FunctionResponse {{\n  id: {},\n  name: \"{}\",\n  result: {}\n}}",
+            id_str,
+            self.name,
+            pretty_result.replace("\n", "\n  ") // indent JSON
+        )
+    }
 }
 
 /// Function signature for tools
@@ -346,15 +428,21 @@ impl ToolCollection {
         Ok(self)
     }
 
-    pub async fn call(&self, call: FunctionCall) -> Result<Value, ToolError> {
-        let FunctionCall { name, arguments } = call;
+    pub async fn call(&self, call: FunctionCall) -> Result<FunctionResponse, ToolError> {
+        let FunctionCall {
+            id,
+            name,
+            arguments,
+        } = call;
         let async_func = self
             .funcs
             .get(name.as_str())
             .ok_or(ToolError::FunctionNotFound {
-                name: Cow::Owned(name),
+                name: Cow::Owned(name.clone()),
             })?;
-        async_func(arguments).await
+
+        let result = async_func(arguments).await?;
+        Ok(FunctionResponse { id, name, result })
     }
 
     pub fn unregister(&mut self, name: &str) -> Result<(), ToolError> {
@@ -574,10 +662,7 @@ mod tool_tests {
     // fn using_args(_a: SomeArgs) {}
 
     fn fc(name: &str, args: serde_json::Value) -> FunctionCall {
-        FunctionCall {
-            name: name.to_string(),
-            arguments: args,
-        }
+        FunctionCall::new(name.to_string(), args)
     }
 
     #[tokio::test]
@@ -609,18 +694,27 @@ mod tool_tests {
         //     .unwrap();
 
         assert_eq!(
-            collection.call(fc("add", json!([1, 2]))).await.unwrap(),
+            collection
+                .call(fc("add", json!([1, 2])))
+                .await
+                .unwrap()
+                .result,
             json!(3)
         );
         assert_eq!(
             collection
                 .call(fc("concat", json!(["hello", "world"])))
                 .await
-                .unwrap(),
+                .unwrap()
+                .result,
             json!("helloworld")
         );
         assert_eq!(
-            collection.call(fc("noop", json!(null))).await.unwrap(),
+            collection
+                .call(fc("noop", json!(null)))
+                .await
+                .unwrap()
+                .result,
             json!(null)
         );
         // Complex args test commented out due to ToolSchema derive requirement
@@ -644,11 +738,11 @@ mod tool_tests {
         .unwrap();
 
         assert_eq!(
-            col.call(fc("is_even", json!([4]))).await.unwrap(),
+            col.call(fc("is_even", json!([4]))).await.unwrap().result,
             json!(true)
         );
         assert_eq!(
-            col.call(fc("is_even", json!([3]))).await.unwrap(),
+            col.call(fc("is_even", json!([3]))).await.unwrap().result,
             json!(false)
         );
     }
