@@ -96,7 +96,7 @@ For more details about the codebase organization, see [CODE_ORGANIZATION.md](COD
 
 ### Rust Version Support
 
-Tools-rs requires **Rust 1.70** or later and supports:
+Tools-rs requires **Rust 1.85** or later and supports:
 - Automatically generate JSON schemas for LLM consumption
 - Execute tools safely with full type checking
 - Handle errors gracefully with detailed context
