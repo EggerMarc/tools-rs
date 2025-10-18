@@ -207,7 +207,7 @@ impl From<serde_json::Error> for DeserializationError {
 // ============================================================================
 
 /// Represents a function call with name and arguments
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct FunctionCall {
     pub id: Option<CallId>,
     pub name: String,
@@ -266,7 +266,7 @@ impl fmt::Display for CallId {
 }
 
 /// Represents a function response with name and arguments
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct FunctionResponse {
     pub id: Option<CallId>,
     pub name: String,
