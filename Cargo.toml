@@ -5,7 +5,7 @@ description  = "Core functionality for the tools-rs tool collection system"
 edition      = "2024"
 license      = "MIT"
 name         = "tools-rs"
-version      = "0.1.4"
+version      = "0.1.5"
 
 [lib]
 name = "tools_rs"

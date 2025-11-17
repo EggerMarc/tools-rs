@@ -374,7 +374,7 @@ fn schema_value<T: ToolSchema>() -> Result<Value, ToolError> {
     Ok(T::schema())
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ToolCollection {
     funcs: HashMap<&'static str, Arc<ToolFunc>>,
     descriptions: HashMap<&'static str, &'static str>,
