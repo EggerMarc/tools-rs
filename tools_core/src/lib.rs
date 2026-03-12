@@ -265,6 +265,12 @@ impl fmt::Display for CallId {
     }
 }
 
+impl From<CallId> for String {
+    fn from(id: CallId) -> Self {
+        id.0.to_string()
+    }
+}
+
 /// Represents a function response with name and arguments
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct FunctionResponse {
