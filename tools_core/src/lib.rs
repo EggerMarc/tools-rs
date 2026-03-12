@@ -225,11 +225,11 @@ impl FunctionCall {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CallId(uuid::Uuid);
+pub struct CallId(String);
 
 impl CallId {
     pub fn new() -> CallId {
-        CallId(uuid::Uuid::new_v4())
+        CallId(uuid::Uuid::new_v4().to_string())
     }
 }
 
@@ -246,7 +246,7 @@ impl<'de> Deserialize<'de> for CallId {
     {
         let s = String::deserialize(deserializer)?;
         let uuid = uuid::Uuid::parse_str(&s).map_err(serde::de::Error::custom)?;
-        Ok(CallId(uuid))
+        Ok(CallId(uuid.to_string()))
     }
 }
 
@@ -268,6 +268,12 @@ impl fmt::Display for CallId {
 impl From<CallId> for String {
     fn from(id: CallId) -> Self {
         id.0.to_string()
+    }
+}
+
+impl From<String> for CallId {
+    fn from(id: String) -> Self {
+        CallId(id)
     }
 }
 
