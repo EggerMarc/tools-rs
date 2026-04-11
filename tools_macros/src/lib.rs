@@ -370,8 +370,9 @@ fn attr_expr_to_json(e: &Expr) -> serde_json::Value {
         }) => match expr.as_ref() {
             Expr::Lit(ExprLit {
                 lit: Lit::Int(i), ..
-            }) => match i.base10_parse::<i64>() {
-                Ok(n) => serde_json::Value::Number((-n).into()),
+            }) => match i.base10_parse::<i64>().map(|n| n.checked_neg()) {
+                Ok(Some(n)) => serde_json::Value::Number(n.into()),
+                Ok(None) => abort!(i, "integer literal overflows i64 when negated"),
                 Err(err) => abort!(i, "invalid integer literal: {}", err),
             },
             Expr::Lit(ExprLit {
