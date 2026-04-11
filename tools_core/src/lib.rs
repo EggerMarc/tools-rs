@@ -186,6 +186,18 @@ pub enum ToolError {
 
     #[error("Runtime error: {0}")]
     Runtime(String),
+
+    #[error("tool `{tool}` has attributes that do not match the metadata schema: {error}")]
+    BadMeta {
+        tool: &'static str,
+        error: String,
+    },
+
+    #[error("validation failed for {} tool(s): {summary}", .errors.len())]
+    MetaValidation {
+        errors: Vec<MetaValidationError>,
+        summary: String,
+    },
 }
 
 /// Specific deserialization errors
@@ -323,29 +335,60 @@ pub struct TypeSignature {
     pub output_type: &'static str,
 }
 
-/// Tool registration for inventory collection
+/// Default metadata type for [`ToolCollection`]. Empty struct that
+/// deserializes from any JSON object, ignoring all fields. Use this when
+/// you don't care about per-tool attributes.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NoMeta {}
+
+/// Helper trait that lets [`ToolCollection::register`] accept either a real
+/// `M` or `()` when `M = NoMeta`. Passing `()` to a typed collection fails
+/// at compile time — there's no silent default.
+pub trait MetaArg<M> {
+    fn into_meta(self) -> M;
+}
+
+impl<M> MetaArg<M> for M {
+    fn into_meta(self) -> M {
+        self
+    }
+}
+
+impl MetaArg<NoMeta> for () {
+    fn into_meta(self) -> NoMeta {
+        NoMeta {}
+    }
+}
+
+/// Tool registration for inventory collection. Constructed via struct
+/// literal in macro-generated code; field additions are minor-version
+/// breaking changes.
 pub struct ToolRegistration {
     pub name: &'static str,
     pub doc: &'static str,
     pub f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
     pub param_schema: fn() -> Value,
+    /// JSON object literal of the attributes declared in `#[tool(...)]`.
+    /// `"{}"` when no attributes were given. Deserialized into the
+    /// collection's `M` at [`ToolCollection::collect_tools`] time.
+    pub meta_json: &'static str,
 }
 
-impl ToolRegistration {
-    pub const fn new(
-        name: &'static str,
-        doc: &'static str,
-        f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
-        param_schema: fn() -> Value,
-    ) -> Self {
-        Self {
-            name,
-            doc,
-            f,
-            param_schema,
-        }
+/// Per-tool attribute validation error. Reported by
+/// [`validate_tool_attrs`] and [`validate_tool_attrs_for`].
+#[derive(Debug, Clone)]
+pub struct MetaValidationError {
+    pub tool: Cow<'static, str>,
+    pub error: String,
+}
+
+impl fmt::Display for MetaValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "tool `{}`: {}", self.tool, self.error)
     }
 }
+
+impl std::error::Error for MetaValidationError {}
 
 /// Represents a tool that can be called
 #[derive(Debug, Clone)]
@@ -386,55 +429,101 @@ fn schema_value<T: ToolSchema>() -> Result<Value, ToolError> {
     Ok(T::schema())
 }
 
-#[derive(Default, Clone)]
-pub struct ToolCollection {
-    funcs: HashMap<&'static str, Arc<ToolFunc>>,
-    descriptions: HashMap<&'static str, &'static str>,
-    signatures: HashMap<&'static str, TypeSignature>,
-    declarations: HashMap<&'static str, FunctionDecl<'static>>,
+/// One entry in a [`ToolCollection`]: callable function, schema, and the
+/// metadata typed against the collection's `M` parameter.
+pub struct ToolEntry<M> {
+    pub func: Arc<ToolFunc>,
+    pub decl: FunctionDecl<'static>,
+    pub meta: M,
 }
 
-impl ToolCollection {
+impl<M: Clone> Clone for ToolEntry<M> {
+    fn clone(&self) -> Self {
+        Self {
+            func: self.func.clone(),
+            decl: self.decl.clone(),
+            meta: self.meta.clone(),
+        }
+    }
+}
+
+/// Collection of registered tools, parameterized by a metadata type `M`.
+///
+/// `M` defaults to [`NoMeta`] — an empty struct that swallows any
+/// `#[tool(...)]` attributes a tool declared. Opt into typed metadata by
+/// setting `M` explicitly:
+///
+/// ```ignore
+/// let tools = ToolCollection::<MyPolicy>::collect_tools()?;
+/// if tools.meta("delete_file").unwrap().requires_approval { ... }
+/// ```
+pub struct ToolCollection<M = NoMeta> {
+    entries: HashMap<&'static str, ToolEntry<M>>,
+}
+
+impl<M> Default for ToolCollection<M> {
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+}
+
+impl<M: Clone> Clone for ToolCollection<M> {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+        }
+    }
+}
+
+impl<M> ToolCollection<M> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn register<I, O, F, Fut>(
+    /// Register a tool programmatically. Pass `()` as `meta` for
+    /// `ToolCollection<NoMeta>`; pass an `M` for typed collections.
+    /// Passing `()` to a typed collection is a compile error.
+    pub fn register<A, I, O, F, Fut>(
         &mut self,
         name: &'static str,
         desc: &'static str,
         func: F,
+        meta: A,
     ) -> Result<&mut Self, ToolError>
     where
+        A: MetaArg<M>,
         I: 'static + DeserializeOwned + Serialize + Send + ToolSchema,
         O: 'static + Serialize + Send + ToolSchema,
         F: Fn(I) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = O> + Send + 'static,
     {
-        if self.funcs.contains_key(name) {
+        if self.entries.contains_key(name) {
             return Err(ToolError::AlreadyRegistered { name });
         }
 
-        self.descriptions.insert(name, desc);
-
-        self.declarations
-            .insert(name, FunctionDecl::new(name, desc, schema_value::<I>()?));
-
         let func_arc: Arc<F> = Arc::new(func);
-        self.funcs.insert(
+        let boxed: Arc<ToolFunc> = Arc::new(
+            move |raw: Value| -> BoxFuture<'static, Result<Value, ToolError>> {
+                let func = func_arc.clone();
+                async move {
+                    let input: I =
+                        serde_json::from_value(raw).map_err(DeserializationError::from)?;
+                    let output: O = (func)(input).await;
+                    serde_json::to_value(output).map_err(|e| ToolError::Runtime(e.to_string()))
+                }
+                .boxed()
+            },
+        );
+
+        self.entries.insert(
             name,
-            Arc::new(
-                move |raw: Value| -> BoxFuture<'static, Result<Value, ToolError>> {
-                    let func = func_arc.clone();
-                    async move {
-                        let input: I =
-                            serde_json::from_value(raw).map_err(DeserializationError::from)?;
-                        let output: O = (func)(input).await;
-                        serde_json::to_value(output).map_err(|e| ToolError::Runtime(e.to_string()))
-                    }
-                    .boxed()
-                },
-            ),
+            ToolEntry {
+                func: boxed,
+                decl: FunctionDecl::new(name, desc, schema_value::<I>()?),
+                meta: meta.into_meta(),
+            },
         );
 
         Ok(self)
@@ -446,52 +535,133 @@ impl ToolCollection {
             name,
             arguments,
         } = call;
-        let async_func = self
-            .funcs
+        let entry = self
+            .entries
             .get(name.as_str())
             .ok_or(ToolError::FunctionNotFound {
                 name: Cow::Owned(name.clone()),
             })?;
 
-        let result = async_func(arguments).await?;
+        let result = (entry.func)(arguments).await?;
         Ok(FunctionResponse { id, name, result })
     }
 
     pub fn unregister(&mut self, name: &str) -> Result<(), ToolError> {
-        if self.funcs.remove(name).is_none() {
+        if self.entries.remove(name).is_none() {
             return Err(ToolError::FunctionNotFound {
                 name: Cow::Owned(name.to_string()),
             });
         }
-        self.descriptions.remove(name);
-        self.signatures.remove(name);
-        self.declarations.remove(name);
         Ok(())
     }
 
-    pub fn descriptions(&self) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {
-        self.descriptions.iter().map(|(k, v)| (*k, *v))
+    pub fn get(&self, name: &str) -> Option<&ToolEntry<M>> {
+        self.entries.get(name)
     }
 
-    pub fn collect_tools() -> Self {
-        let mut hub = Self::new();
+    pub fn meta(&self, name: &str) -> Option<&M> {
+        self.entries.get(name).map(|e| &e.meta)
+    }
 
-        for reg in inventory::iter::<ToolRegistration> {
-            hub.descriptions.insert(reg.name, reg.doc);
-            hub.funcs.insert(reg.name, Arc::new(reg.f));
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &ToolEntry<M>)> + '_ {
+        self.entries.iter().map(|(k, v)| (*k, v))
+    }
 
-            hub.declarations.insert(
-                reg.name,
-                FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
-            );
-        }
-
-        hub
+    pub fn descriptions(&self) -> impl Iterator<Item = (&'static str, &'static str)> + '_ {
+        self.entries.iter().map(|(k, v)| (*k, v.decl.description))
     }
 
     pub fn json(&self) -> Result<Value, ToolError> {
-        let list: Vec<&FunctionDecl> = self.declarations.values().collect();
+        let list: Vec<&FunctionDecl> = self.entries.values().map(|e| &e.decl).collect();
         Ok(serde_json::to_value(list)?)
+    }
+}
+
+impl<M: DeserializeOwned> ToolCollection<M> {
+    /// Collect every tool registered via `#[tool]`. Fails fast on the first
+    /// tool whose `meta_json` blob does not deserialize into `M`.
+    ///
+    /// For accumulated, CI-friendly validation use [`validate_tool_attrs`].
+    pub fn collect_tools() -> Result<Self, ToolError> {
+        let mut hub = Self::new();
+
+        for reg in inventory::iter::<ToolRegistration> {
+            let meta: M = serde_json::from_str(reg.meta_json).map_err(|e| ToolError::BadMeta {
+                tool: reg.name,
+                error: e.to_string(),
+            })?;
+
+            hub.entries.insert(
+                reg.name,
+                ToolEntry {
+                    func: Arc::new(reg.f),
+                    decl: FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
+                    meta,
+                },
+            );
+        }
+
+        Ok(hub)
+    }
+}
+
+/// Validate every registered tool's `#[tool(...)]` attributes against `M`,
+/// accumulating all failures. Use in CI tests to catch attribute typos
+/// before they hit `collect_tools` at runtime.
+pub fn validate_tool_attrs<M: DeserializeOwned>() -> Result<(), Vec<MetaValidationError>> {
+    let mut errors = Vec::new();
+    for reg in inventory::iter::<ToolRegistration> {
+        if let Err(e) = serde_json::from_str::<M>(reg.meta_json) {
+            errors.push(MetaValidationError {
+                tool: Cow::Borrowed(reg.name),
+                error: e.to_string(),
+            });
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Like [`validate_tool_attrs`] but only checks the named subset. Useful
+/// for workspaces with multiple metadata schemas, each gating a different
+/// group of tools. Returns an error for any name that does not match a
+/// registered tool — typos in the test list are as bad as typos in the
+/// attributes.
+pub fn validate_tool_attrs_for<M: DeserializeOwned>(
+    names: &[&str],
+) -> Result<(), Vec<MetaValidationError>> {
+    use std::collections::HashSet;
+    let wanted: HashSet<&str> = names.iter().copied().collect();
+    let mut found: HashSet<&str> = HashSet::new();
+    let mut errors = Vec::new();
+
+    for reg in inventory::iter::<ToolRegistration> {
+        if !wanted.contains(reg.name) {
+            continue;
+        }
+        found.insert(reg.name);
+        if let Err(e) = serde_json::from_str::<M>(reg.meta_json) {
+            errors.push(MetaValidationError {
+                tool: Cow::Borrowed(reg.name),
+                error: e.to_string(),
+            });
+        }
+    }
+
+    for missing in wanted.difference(&found) {
+        errors.push(MetaValidationError {
+            tool: Cow::Owned((*missing).to_string()),
+            error: "no tool with this name is registered".to_string(),
+        });
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
 }
 
@@ -679,22 +849,31 @@ mod tool_tests {
 
     #[tokio::test]
     async fn test_collection() {
-        let mut collection = ToolCollection::default();
+        let mut collection: ToolCollection = ToolCollection::default();
 
         collection
-            .register("add", "Adds two values", |t: (i32, i32)| async move {
-                add(t.0, t.1)
-            })
+            .register(
+                "add",
+                "Adds two values",
+                |t: (i32, i32)| async move { add(t.0, t.1) },
+                (),
+            )
             .unwrap();
         collection
             .register(
                 "concat",
                 "Concatenates two strings",
                 |t: (String, String)| async move { concat(t.0, t.1) },
+                (),
             )
             .unwrap();
         collection
-            .register("noop", "Does nothing", |_t: ()| async move { noop() })
+            .register(
+                "noop",
+                "Does nothing",
+                |_t: ()| async move { noop() },
+                (),
+            )
             .unwrap();
         // Complex args test commented out due to ToolSchema derive requirement
         // collection
@@ -741,11 +920,12 @@ mod tool_tests {
 
     #[tokio::test]
     async fn test_boolean_function() {
-        let mut col = ToolCollection::default();
+        let mut col: ToolCollection = ToolCollection::default();
         col.register(
             "is_even",
             "Checks even",
             |t: (i32,)| async move { t.0 % 2 == 0 },
+            (),
         )
         .unwrap();
 
@@ -768,7 +948,7 @@ mod tool_tests {
 
     // #[tokio::test]
     // async fn test_complex_return() {
-    //     let mut col = ToolCollection::default();
+    //     let mut col: ToolCollection = ToolCollection::default();
     //     col.register(
     //         "create_point",
     //         "Creates a point",
@@ -784,8 +964,8 @@ mod tool_tests {
 
     #[tokio::test]
     async fn test_invalid_function_name() {
-        let mut col = ToolCollection::default();
-        col.register("dummy", "does nothing", |_: ()| async {})
+        let mut col: ToolCollection = ToolCollection::default();
+        col.register("dummy", "does nothing", |_: ()| async {}, ())
             .unwrap();
 
         let err = col.call(fc("ghost", json!([]))).await.unwrap_err();
@@ -794,10 +974,13 @@ mod tool_tests {
 
     #[tokio::test]
     async fn test_deserialization_error() {
-        let mut col = ToolCollection::default();
-        col.register("subtract", "Sub two numbers", |t: (i32, i32)| async move {
-            t.0 - t.1
-        })
+        let mut col: ToolCollection = ToolCollection::default();
+        col.register(
+            "subtract",
+            "Sub two numbers",
+            |t: (i32, i32)| async move { t.0 - t.1 },
+            (),
+        )
         .unwrap();
 
         let err = col
