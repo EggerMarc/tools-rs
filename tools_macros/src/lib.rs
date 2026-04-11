@@ -7,8 +7,9 @@ use proc_macro_crate::{crate_name, FoundCrate};
 use proc_macro_error::{abort, proc_macro_error};
 use quote::quote;
 use syn::{
-    parse_macro_input, Attribute, Data, DeriveInput, Expr, ExprLit, Fields, FieldsNamed,
-    FieldsUnnamed, FnArg, ItemFn, Lit, LitStr, Meta, Pat, PatIdent, PatType, Type, TypePath,
+    parse::Parser, parse_macro_input, punctuated::Punctuated, Attribute, Data, DeriveInput, Expr,
+    ExprLit, Fields, FieldsNamed, FieldsUnnamed, FnArg, ItemFn, Lit, LitStr, Meta, Pat, PatIdent,
+    PatType, Token, Type, TypePath,
 };
 
 // ============================================================================
@@ -217,7 +218,11 @@ fn docs(attrs: &[Attribute]) -> String {
 
 #[proc_macro_error]
 #[proc_macro_attribute]
-pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // ───────── Parse #[tool(key = value, ...)] attributes ─────────
+    let meta_json = parse_tool_attrs(attr);
+    let meta_lit = LitStr::new(&meta_json, Span::call_site());
+
     // ───────── Parse the user function ─────────
     let func: ItemFn = parse_macro_input!(item);
     let fn_name = &func.sig.ident;
@@ -259,10 +264,10 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         inventory::submit! {
-            #crate_path::ToolRegistration::new(
-                #fn_name_str,
-                #doc_lit,
-                |v| ::std::boxed::Box::pin(async move {
+            #crate_path::ToolRegistration {
+                name: #fn_name_str,
+                doc: #doc_lit,
+                f: |v| ::std::boxed::Box::pin(async move {
                     let arg: #wrapper_ident =
                         ::serde_json::from_value(v)
                             .map_err(#crate_path::DeserializationError::from)?;
@@ -270,10 +275,118 @@ pub fn tool(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     ::serde_json::to_value(out)
                         .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
                 }),
-                || #schema_fn::<#wrapper_ident>(),
-            )
+                param_schema: || #schema_fn::<#wrapper_ident>(),
+                meta_json: #meta_lit,
+            }
         }
     })
+}
+
+/// Parse `#[tool(key = value, key2 = value2, flag, ...)]` into a JSON
+/// object literal that gets stored on `ToolRegistration::meta_json`.
+/// Returns `"{}"` for empty attribute lists.
+fn parse_tool_attrs(attr: TokenStream) -> String {
+    if attr.is_empty() {
+        return "{}".to_string();
+    }
+
+    let parser = Punctuated::<Meta, Token![,]>::parse_terminated;
+    let metas = match parser.parse(attr) {
+        Ok(m) => m,
+        Err(e) => abort!(e.span(), "failed to parse `#[tool(...)]` attributes: {}", e),
+    };
+
+    let mut map = serde_json::Map::new();
+    for m in metas {
+        match m {
+            Meta::NameValue(nv) => {
+                let key = match nv.path.get_ident() {
+                    Some(id) => id.to_string(),
+                    None => abort!(nv.path, "attribute key must be a single identifier"),
+                };
+                if key == "name" || key == "description" {
+                    abort!(
+                        nv.path,
+                        "`{}` is reserved — set it via the function name and doc comment",
+                        key
+                    );
+                }
+                if map.contains_key(&key) {
+                    abort!(nv.path, "duplicate attribute key `{}`", key);
+                }
+                map.insert(key, attr_expr_to_json(&nv.value));
+            }
+            Meta::Path(p) => {
+                let key = match p.get_ident() {
+                    Some(id) => id.to_string(),
+                    None => abort!(p, "attribute key must be a single identifier"),
+                };
+                if key == "name" || key == "description" {
+                    abort!(p, "`{}` is reserved", key);
+                }
+                if map.contains_key(&key) {
+                    abort!(p, "duplicate attribute key `{}`", key);
+                }
+                map.insert(key, serde_json::Value::Bool(true));
+            }
+            Meta::List(l) => abort!(
+                l,
+                "nested attributes are not supported — use flat `key = value` pairs"
+            ),
+        }
+    }
+
+    serde_json::Value::Object(map).to_string()
+}
+
+fn attr_expr_to_json(e: &Expr) -> serde_json::Value {
+    match e {
+        Expr::Lit(ExprLit {
+            lit: Lit::Bool(b), ..
+        }) => serde_json::Value::Bool(b.value),
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(s), ..
+        }) => serde_json::Value::String(s.value()),
+        Expr::Lit(ExprLit {
+            lit: Lit::Int(i), ..
+        }) => match i.base10_parse::<i64>() {
+            Ok(n) => serde_json::Value::Number(n.into()),
+            Err(err) => abort!(i, "invalid integer literal: {}", err),
+        },
+        Expr::Lit(ExprLit {
+            lit: Lit::Float(f), ..
+        }) => match f.base10_parse::<f64>() {
+            Ok(n) => match serde_json::Number::from_f64(n) {
+                Some(num) => serde_json::Value::Number(num),
+                None => abort!(f, "float literal cannot be represented as JSON number"),
+            },
+            Err(err) => abort!(f, "invalid float literal: {}", err),
+        },
+        // Negative integer/float — `-5` parses as Expr::Unary, not a literal.
+        Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::Neg(_),
+            expr,
+            ..
+        }) => match expr.as_ref() {
+            Expr::Lit(ExprLit {
+                lit: Lit::Int(i), ..
+            }) => match i.base10_parse::<i64>() {
+                Ok(n) => serde_json::Value::Number((-n).into()),
+                Err(err) => abort!(i, "invalid integer literal: {}", err),
+            },
+            Expr::Lit(ExprLit {
+                lit: Lit::Float(f), ..
+            }) => match f.base10_parse::<f64>() {
+                Ok(n) => match serde_json::Number::from_f64(-n) {
+                    Some(num) => serde_json::Value::Number(num),
+                    None => abort!(f, "float literal cannot be represented as JSON number"),
+                },
+                Err(err) => abort!(f, "invalid float literal: {}", err),
+            },
+            _ => abort!(e, "attribute values must be bool/int/float/string literals"),
+        },
+        _ => abort!(e, "attribute values must be bool/int/float/string literals"),
+    }
 }
 
 #[cfg(test)]

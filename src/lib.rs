@@ -37,10 +37,13 @@
 //! use tools_rs::ToolCollection;
 //!
 //! # fn example() -> Result<(), tools_rs::ToolError> {
-//! let mut tools = ToolCollection::new();
-//! tools.register("greet", "Greets a person", |name: String| async move {
-//!     format!("Hello, {}!", name)
-//! })?;
+//! let mut tools: ToolCollection = ToolCollection::new();
+//! tools.register(
+//!     "greet",
+//!     "Greets a person",
+//!     |name: String| async move { format!("Hello, {}!", name) },
+//!     (),
+//! )?;
 //! # Ok(())
 //! # }
 //! ```
@@ -81,7 +84,12 @@ pub mod prelude;
 /// ```
 #[inline]
 pub fn collect_tools() -> ToolCollection {
+    // `NoMeta` deserializes from any JSON object, so this never fails in
+    // practice — a panic here means the `#[tool]` macro emitted malformed
+    // JSON, which is a bug in tools-rs itself. Typed collections that can
+    // realistically fail use `ToolCollection::<M>::collect_tools()?`.
     ToolCollection::collect_tools()
+        .expect("tools-rs internal error: macro emitted malformed meta_json")
 }
 
 /// Generate function declarations in JSON format for LLM consumption.

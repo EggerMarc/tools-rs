@@ -17,6 +17,7 @@ Tools-rs is a framework for building, registering, and executing tools with auto
 - **LLM Integration** - Export function declarations for LLM function calling APIs (OpenAI, Anthropic, etc.)
 - **Manual Registration** - Programmatic tool registration for dynamic scenarios
 - **Inventory System** - Link-time tool collection using the `inventory` crate for zero-runtime-cost discovery
+- **Typed Metadata** - Attach `#[tool(key = value)]` attributes to tools and read them through a user-defined `M` type on `ToolCollection<M>` (see [Tool Metadata](#tool-metadata))
 
 ## Quick Start
 
@@ -70,7 +71,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tools-rs = "0.1.5"
+tools-rs = "0.2.0"
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
 serde_json = "1.0"
 ```
@@ -156,17 +157,16 @@ use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut tools = ToolCollection::new();
+    let mut tools: ToolCollection = ToolCollection::new();
 
-    // Register a simple tool manually
+    // Register a simple tool manually. Pass `()` as the metadata when the
+    // collection uses the default `NoMeta`; pass a real `M` value when the
+    // collection is typed (e.g. `ToolCollection::<MyPolicy>::new()`).
     tools.register(
         "multiply",
         "Multiplies two numbers",
-        |args: serde_json::Value| async move {
-            let a = args["a"].as_i64().unwrap_or(0);
-            let b = args["b"].as_i64().unwrap_or(0);
-            Ok(json!(a * b))
-        }
+        |pair: (i64, i64)| async move { pair.0 * pair.1 },
+        (),
     )?;
 
     // Call the manually registered tool
@@ -197,23 +197,124 @@ struct Calculator {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut tools = ToolCollection::new();
+    let mut tools: ToolCollection = ToolCollection::new();
 
     tools.register(
         "calculate",
         "Performs arithmetic operations on a list of numbers",
         |input: Calculator| async move {
             match input.operation.as_str() {
-                "sum" => Ok(input.operands.iter().sum::<f64>()),
-                "product" => Ok(input.operands.iter().product::<f64>()),
-                "mean" => Ok(input.operands.iter().sum::<f64>() / input.operands.len() as f64),
-                _ => Err(format!("Unknown operation: {}", input.operation)),
+                "sum" => input.operands.iter().sum::<f64>(),
+                "product" => input.operands.iter().product::<f64>(),
+                "mean" => input.operands.iter().sum::<f64>() / input.operands.len() as f64,
+                _ => f64::NAN,
             }
-        }
+        },
+        (),
     )?;
 
     Ok(())
 }
+```
+
+## Tool Metadata
+
+`#[tool(...)]` accepts flat `key = value` attributes that get stored on each
+tool and read back through a user-defined metadata type. This lets a single
+tool declaration feed multiple collections, each typed to the schema *that*
+collection cares about — useful for HITL approval gates, cost tiering, and
+similar policy concerns that don't belong in the function body.
+
+```rust
+use serde::Deserialize;
+use tools_rs::{tool, ToolCollection};
+
+#[derive(Debug, Default, Deserialize, Clone, Copy)]
+#[serde(default)]
+struct Policy {
+    requires_approval: bool,
+    cost_tier: u8,
+}
+
+#[tool(requires_approval = true, cost_tier = 3)]
+/// Deletes a file.
+async fn delete_file(path: String) -> String { format!("deleted {path}") }
+
+#[tool]
+/// Reads a file (no metadata declared — fields default).
+async fn read_file(path: String) -> String { format!("read {path}") }
+
+fn main() -> Result<(), tools_rs::ToolError> {
+    let tools = ToolCollection::<Policy>::collect_tools()?;
+    let entry = tools.get("delete_file").unwrap();
+    if entry.meta.requires_approval {
+        // gate the call behind your approval flow
+    }
+    Ok(())
+}
+```
+
+### Default behavior
+
+`ToolCollection` defaults to `ToolCollection<NoMeta>`. `NoMeta` is an empty
+struct that swallows any attributes a tool declared, so existing
+`collect_tools()` callers see no behavioral change. Opt into typed metadata
+by writing `ToolCollection::<MyMeta>::collect_tools()` instead.
+
+### Validation
+
+`ToolCollection::<M>::collect_tools()` fails fast on the first tool whose
+attributes don't match `M`. For CI, two helpers accumulate every failure
+across the inventory before returning:
+
+```rust
+use tools_core::{validate_tool_attrs, validate_tool_attrs_for};
+# #[derive(serde::Deserialize)] struct Policy;
+
+#[test]
+fn every_tool_conforms_to_policy() {
+    validate_tool_attrs::<Policy>().unwrap();
+}
+
+#[test]
+fn destructive_tools_have_approval_metadata() {
+    // Subset gating: only check the named tools, error if any name doesn't
+    // match a registered tool (typos in the test list are caught too).
+    validate_tool_attrs_for::<Policy>(&["delete_file", "drop_table"]).unwrap();
+}
+```
+
+### Attribute syntax
+
+- `#[tool(key = "value")]` — string
+- `#[tool(key = 42)]` — integer (negative literals are accepted: `-3`)
+- `#[tool(key = 1.5)]` — float
+- `#[tool(key = true)]` — boolean
+- `#[tool(flag)]` — bare flag, equivalent to `flag = true`
+- Multiple attributes are comma-separated: `#[tool(a = 1, b = "x", flag)]`
+
+Attributes are flat-only — nested structures (`#[tool(policy = { ... })]`)
+are not supported. Use richer types in runtime metadata, not at the
+attribute site. The keys `name` and `description` are reserved (the
+function name and doc comment supply them).
+
+### Programmatic registration with metadata
+
+`ToolCollection::register` takes a metadata argument. For untyped
+collections, pass `()`; passing `()` to a typed collection is a compile
+error.
+
+```rust
+# use tools_rs::ToolCollection;
+# #[derive(Default)] struct Policy { requires_approval: bool }
+let mut tools: ToolCollection<Policy> = ToolCollection::new();
+tools.register(
+    "noop",
+    "does nothing",
+    |_: ()| async {},
+    Policy { requires_approval: false },
+)?;
+# Ok::<(), tools_rs::ToolError>(())
 ```
 
 ## Examples
