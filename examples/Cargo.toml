@@ -44,3 +44,7 @@ path = "reqwest/main.rs"
 [[example]]
 name = "chatbot"
 path = "chatbot/main.rs"
+
+[[example]]
+name = "hitl"
+path = "hitl/main.rs"
