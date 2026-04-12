@@ -1,7 +1,7 @@
 //! Shared context injection via `ToolCollection::builder().with_context(...)`.
 //!
-//! Tools that declare `ctx: Arc<T>` as their first parameter receive the
-//! shared context automatically at call time. The caller only passes the
+//! Tools that declare `ctx: T` as their first parameter receive an injected
+//! `Arc<T>` shared context automatically at call time. The caller only passes the
 //! "real" arguments — context injection is invisible at the call site.
 //!
 //! Run with:
