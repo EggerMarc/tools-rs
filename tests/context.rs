@@ -19,7 +19,7 @@ struct AppState {
 
 #[tool]
 /// Greets someone using the shared AppState.
-async fn greet(ctx: Arc<AppState>, name: String) -> String {
+async fn greet(ctx: AppState, name: String) -> String {
     format!("{}, {}!", ctx.greeting, name)
 }
 

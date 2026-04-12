@@ -247,13 +247,14 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
         .collect();
 
     // If the first parameter is named `ctx`, treat it as context injection.
+    // The user writes `ctx: T`; we rewrite the emitted fn to `ctx: Arc<T>`
+    // so that field access and method calls work via Deref.
     let (ctx_inner_ty, param_pairs) = if all_params
         .first()
         .map_or(false, |(ident, _)| ident == "ctx")
     {
-        let ctx_ty = &all_params[0].1;
-        let inner = extract_arc_inner(ctx_ty);
-        (Some(inner), all_params[1..].to_vec())
+        let ctx_ty = all_params[0].1.clone();
+        (Some(ctx_ty), all_params[1..].to_vec())
     } else {
         (None, all_params)
     };
@@ -313,9 +314,23 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             )
         };
 
+    // ───────── Rewrite fn signature if ctx detected ─────────
+    // User wrote `ctx: T`, emit `ctx: Arc<T>` so Deref covers .field / .method().
+    let emitted_func = if let Some(ref inner_ty) = ctx_inner_ty {
+        let mut func_out = func.clone();
+        if let Some(first_arg) = func_out.sig.inputs.first_mut() {
+            if let FnArg::Typed(pat_type) = first_arg {
+                pat_type.ty = Box::new(syn::parse_quote!(::std::sync::Arc<#inner_ty>));
+            }
+        }
+        func_out
+    } else {
+        func
+    };
+
     // ───────── Macro expansion ─────────
     TokenStream::from(quote! {
-        #func
+        #emitted_func
 
         #[allow(non_camel_case_types)]
         #[derive(::serde::Deserialize, tools_macros::ToolSchema)]
@@ -339,28 +354,6 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     })
-}
-
-/// Extract the inner type `T` from `Arc<T>`. Aborts if the type doesn't
-/// look like `Arc<...>` (or `std::sync::Arc<...>`).
-fn extract_arc_inner(ty: &Type) -> Type {
-    if let Type::Path(TypePath { path, .. }) = ty {
-        let last = path.segments.last().unwrap_or_else(|| {
-            abort!(ty, "`ctx` parameter must be typed `Arc<T>`");
-        });
-        if last.ident == "Arc" {
-            if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
-                if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                    return inner.clone();
-                }
-            }
-        }
-    }
-    abort!(
-        ty,
-        "`ctx` parameter must be typed `Arc<T>`, found `{}`",
-        quote!(#ty)
-    );
 }
 
 /// Parse `#[tool(key = value, key2 = value2, flag, ...)]` into a JSON
