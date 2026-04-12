@@ -230,7 +230,8 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let doc_lit = LitStr::new(&docs(&func.attrs), Span::call_site());
 
     // ───────── Inputs → wrapper struct fields ─────────
-    let (idents, types): (Vec<_>, Vec<_>) = func
+    // Detect reserved `ctx` first parameter.
+    let all_params: Vec<_> = func
         .sig
         .inputs
         .iter()
@@ -243,12 +244,74 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             _ => abort!(arg, "`#[tool]` may not be used on `self` methods"),
         })
-        .unzip();
+        .collect();
+
+    // If the first parameter is named `ctx`, treat it as context injection.
+    let (ctx_inner_ty, param_pairs) = if all_params
+        .first()
+        .map_or(false, |(ident, _)| ident == "ctx")
+    {
+        let ctx_ty = &all_params[0].1;
+        let inner = extract_arc_inner(ctx_ty);
+        (Some(inner), all_params[1..].to_vec())
+    } else {
+        (None, all_params)
+    };
+
+    let (idents, types): (Vec<_>, Vec<_>) = param_pairs.into_iter().unzip();
 
     // ───────── Generated helper idents ─────────
     let wrapper_ident = Ident::new(&format!("__TOOL_INPUT_{fn_name}"), Span::call_site());
     let schema_fn = Ident::new(&format!("__SCHEMA_FOR_{fn_name}"), Span::call_site());
     let crate_path = get_crate_path();
+
+    // ───────── Context-dependent codegen ─────────
+    let (closure_body, needs_ctx_lit, ctx_type_id_expr, ctx_type_name_lit) =
+        if let Some(ref inner_ty) = ctx_inner_ty {
+            let type_name_str = quote!(#inner_ty).to_string();
+            let type_name_lit = LitStr::new(&type_name_str, Span::call_site());
+            (
+                quote! {
+                    |v, ctx_opt| ::std::boxed::Box::pin(async move {
+                        let ctx_any = ctx_opt.ok_or_else(|| #crate_path::ToolError::MissingCtx {
+                            tool: #fn_name_str,
+                        })?;
+                        let ctx: ::std::sync::Arc<#inner_ty> =
+                            ctx_any.downcast::<#inner_ty>().map_err(|_| {
+                                #crate_path::ToolError::Runtime(
+                                    "context downcast failed".to_string(),
+                                )
+                            })?;
+                        let arg: #wrapper_ident =
+                            ::serde_json::from_value(v)
+                                .map_err(#crate_path::DeserializationError::from)?;
+                        let out = #fn_name(ctx, #( arg.#idents ),* ).await;
+                        ::serde_json::to_value(out)
+                            .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
+                    })
+                },
+                quote!(true),
+                quote!(Some(|| ::std::any::TypeId::of::<#inner_ty>())),
+                type_name_lit,
+            )
+        } else {
+            let empty_name = LitStr::new("", Span::call_site());
+            (
+                quote! {
+                    |v, _ctx| ::std::boxed::Box::pin(async move {
+                        let arg: #wrapper_ident =
+                            ::serde_json::from_value(v)
+                                .map_err(#crate_path::DeserializationError::from)?;
+                        let out = #fn_name( #( arg.#idents ),* ).await;
+                        ::serde_json::to_value(out)
+                            .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
+                    })
+                },
+                quote!(false),
+                quote!(None),
+                empty_name,
+            )
+        };
 
     // ───────── Macro expansion ─────────
     TokenStream::from(quote! {
@@ -267,19 +330,37 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             #crate_path::ToolRegistration {
                 name: #fn_name_str,
                 doc: #doc_lit,
-                f: |v| ::std::boxed::Box::pin(async move {
-                    let arg: #wrapper_ident =
-                        ::serde_json::from_value(v)
-                            .map_err(#crate_path::DeserializationError::from)?;
-                    let out = #fn_name( #( arg.#idents ),* ).await;
-                    ::serde_json::to_value(out)
-                        .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
-                }),
+                f: #closure_body,
                 param_schema: || #schema_fn::<#wrapper_ident>(),
                 meta_json: #meta_lit,
+                needs_ctx: #needs_ctx_lit,
+                ctx_type_id: #ctx_type_id_expr,
+                ctx_type_name: #ctx_type_name_lit,
             }
         }
     })
+}
+
+/// Extract the inner type `T` from `Arc<T>`. Aborts if the type doesn't
+/// look like `Arc<...>` (or `std::sync::Arc<...>`).
+fn extract_arc_inner(ty: &Type) -> Type {
+    if let Type::Path(TypePath { path, .. }) = ty {
+        let last = path.segments.last().unwrap_or_else(|| {
+            abort!(ty, "`ctx` parameter must be typed `Arc<T>`");
+        });
+        if last.ident == "Arc" {
+            if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
+                if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                    return inner.clone();
+                }
+            }
+        }
+    }
+    abort!(
+        ty,
+        "`ctx` parameter must be typed `Arc<T>`, found `{}`",
+        quote!(#ty)
+    );
 }
 
 /// Parse `#[tool(key = value, key2 = value2, flag, ...)]` into a JSON

@@ -1,7 +1,12 @@
 #![deny(unsafe_code)]
 
 use core::fmt;
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    borrow::Cow,
+    collections::HashMap,
+    sync::Arc,
+};
 
 use futures::{FutureExt, future::BoxFuture};
 use once_cell::sync::Lazy;
@@ -198,6 +203,16 @@ pub enum ToolError {
         errors: Vec<MetaValidationError>,
         summary: String,
     },
+
+    #[error("tool `{tool}` requires context but none was provided")]
+    MissingCtx { tool: &'static str },
+
+    #[error("tool `{tool}` expects context type `{expected}` but collection has `{got}`")]
+    CtxTypeMismatch {
+        tool: &'static str,
+        expected: String,
+        got: String,
+    },
 }
 
 /// Specific deserialization errors
@@ -319,7 +334,10 @@ impl fmt::Display for FunctionResponse {
 }
 
 /// Function signature for tools
-pub type ToolFunc = dyn Fn(Value) -> BoxFuture<'static, Result<Value, ToolError>> + Send + Sync;
+pub type ToolFunc = dyn Fn(Value, Option<Arc<dyn Any + Send + Sync>>)
+    -> BoxFuture<'static, Result<Value, ToolError>>
+    + Send
+    + Sync;
 
 /// Metadata about a tool function
 #[derive(Debug, Clone)]
@@ -366,12 +384,23 @@ impl MetaArg<NoMeta> for () {
 pub struct ToolRegistration {
     pub name: &'static str,
     pub doc: &'static str,
-    pub f: fn(Value) -> BoxFuture<'static, Result<Value, ToolError>>,
+    pub f: fn(
+        Value,
+        Option<Arc<dyn Any + Send + Sync>>,
+    ) -> BoxFuture<'static, Result<Value, ToolError>>,
     pub param_schema: fn() -> Value,
     /// JSON object literal of the attributes declared in `#[tool(...)]`.
     /// `"{}"` when no attributes were given. Deserialized into the
     /// collection's `M` at [`ToolCollection::collect_tools`] time.
     pub meta_json: &'static str,
+    /// `true` when the tool's first parameter is named `ctx`.
+    pub needs_ctx: bool,
+    /// Returns the [`TypeId`] of the expected context type `T` (the inner
+    /// type of `Arc<T>`). `None` when `needs_ctx` is `false`.
+    pub ctx_type_id: Option<fn() -> TypeId>,
+    /// Human-readable name of the expected context type, for error
+    /// messages. Empty string when `needs_ctx` is `false`.
+    pub ctx_type_name: &'static str,
 }
 
 /// Per-tool attribute validation error. Reported by
@@ -459,12 +488,14 @@ impl<M: Clone> Clone for ToolEntry<M> {
 /// ```
 pub struct ToolCollection<M = NoMeta> {
     entries: HashMap<&'static str, ToolEntry<M>>,
+    ctx: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl<M> Default for ToolCollection<M> {
     fn default() -> Self {
         Self {
             entries: HashMap::new(),
+            ctx: None,
         }
     }
 }
@@ -473,6 +504,7 @@ impl<M: Clone> Clone for ToolCollection<M> {
     fn clone(&self) -> Self {
         Self {
             entries: self.entries.clone(),
+            ctx: self.ctx.clone(),
         }
     }
 }
@@ -480,6 +512,17 @@ impl<M: Clone> Clone for ToolCollection<M> {
 impl<M> ToolCollection<M> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a [`CollectionBuilder`] for constructing a collection with
+    /// shared context and/or custom configuration.
+    pub fn builder() -> CollectionBuilder<M> {
+        CollectionBuilder {
+            ctx: None,
+            ctx_type_id: None,
+            ctx_type_name: "",
+            _meta: std::marker::PhantomData,
+        }
     }
 
     /// Register a tool programmatically. Pass `()` as `meta` for
@@ -505,7 +548,9 @@ impl<M> ToolCollection<M> {
 
         let func_arc: Arc<F> = Arc::new(func);
         let boxed: Arc<ToolFunc> = Arc::new(
-            move |raw: Value| -> BoxFuture<'static, Result<Value, ToolError>> {
+            move |raw: Value,
+                  _ctx: Option<Arc<dyn Any + Send + Sync>>|
+                  -> BoxFuture<'static, Result<Value, ToolError>> {
                 let func = func_arc.clone();
                 async move {
                     let input: I =
@@ -542,7 +587,7 @@ impl<M> ToolCollection<M> {
                 name: Cow::Owned(name.clone()),
             })?;
 
-        let result = (entry.func)(arguments).await?;
+        let result = (entry.func)(arguments, self.ctx.clone()).await?;
         Ok(FunctionResponse { id, name, result })
     }
 
@@ -586,6 +631,10 @@ impl<M: DeserializeOwned> ToolCollection<M> {
         let mut hub = Self::new();
 
         for reg in inventory::iter::<ToolRegistration> {
+            if reg.needs_ctx {
+                return Err(ToolError::MissingCtx { tool: reg.name });
+            }
+
             let meta: M = serde_json::from_str(reg.meta_json).map_err(|e| ToolError::BadMeta {
                 tool: reg.name,
                 error: e.to_string(),
@@ -666,6 +715,85 @@ pub fn validate_tool_attrs_for<M: DeserializeOwned>(
 }
 
 inventory::collect!(ToolRegistration);
+
+// ============================================================================
+// COLLECTION BUILDER
+// ============================================================================
+
+/// Builder for [`ToolCollection`] with support for shared context
+/// injection. Construct via [`ToolCollection::builder()`].
+///
+/// ```ignore
+/// let ctx = Arc::new(MyState::new());
+/// let tools = ToolCollection::<Policy>::builder()
+///     .with_context(ctx)
+///     .collect()?;
+/// ```
+pub struct CollectionBuilder<M = NoMeta> {
+    ctx: Option<Arc<dyn Any + Send + Sync>>,
+    ctx_type_id: Option<TypeId>,
+    ctx_type_name: &'static str,
+    _meta: std::marker::PhantomData<M>,
+}
+
+impl<M> CollectionBuilder<M> {
+    /// Attach a shared context that will be injected into every tool whose
+    /// first parameter is named `ctx`. The context type `T` must match what
+    /// the tools expect — a mismatch is caught at [`collect()`][Self::collect]
+    /// time with a clear error.
+    pub fn with_context<T: Send + Sync + 'static>(mut self, ctx: Arc<T>) -> Self {
+        self.ctx_type_id = Some(TypeId::of::<T>());
+        self.ctx_type_name = std::any::type_name::<T>();
+        self.ctx = Some(ctx);
+        self
+    }
+}
+
+impl<M: DeserializeOwned> CollectionBuilder<M> {
+    /// Build the collection from the global tool inventory. Validates:
+    ///
+    /// - Every tool's `meta_json` deserializes into `M`.
+    /// - Every `needs_ctx` tool's expected `TypeId` matches the builder's.
+    /// - No `needs_ctx` tool exists when no context was provided.
+    pub fn collect(self) -> Result<ToolCollection<M>, ToolError> {
+        let mut entries = HashMap::new();
+
+        for reg in inventory::iter::<ToolRegistration> {
+            if reg.needs_ctx {
+                let Some(provided_id) = self.ctx_type_id else {
+                    return Err(ToolError::MissingCtx { tool: reg.name });
+                };
+                let expected_id = (reg.ctx_type_id.unwrap())();
+                if expected_id != provided_id {
+                    return Err(ToolError::CtxTypeMismatch {
+                        tool: reg.name,
+                        expected: reg.ctx_type_name.to_string(),
+                        got: self.ctx_type_name.to_string(),
+                    });
+                }
+            }
+
+            let meta: M = serde_json::from_str(reg.meta_json).map_err(|e| ToolError::BadMeta {
+                tool: reg.name,
+                error: e.to_string(),
+            })?;
+
+            entries.insert(
+                reg.name,
+                ToolEntry {
+                    func: Arc::new(reg.f),
+                    decl: FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
+                    meta,
+                },
+            );
+        }
+
+        Ok(ToolCollection {
+            entries,
+            ctx: self.ctx,
+        })
+    }
+}
 
 // ============================================================================
 // TESTS
