@@ -18,6 +18,7 @@ Tools-rs is a framework for building, registering, and executing tools with auto
 - **Manual Registration** - Programmatic tool registration for dynamic scenarios
 - **Inventory System** - Link-time tool collection using the `inventory` crate for zero-runtime-cost discovery
 - **Typed Metadata** - Attach `#[tool(key = value)]` attributes to tools and read them through a user-defined `M` type on `ToolCollection<M>` (see [Tool Metadata](#tool-metadata))
+- **Shared Context** - Inject shared resources (`Arc<T>`) into tools via `ctx` first parameter and `ToolCollection::builder().with_context(...)` (see [Shared Context](#shared-context))
 
 ## Quick Start
 
@@ -317,6 +318,127 @@ tools.register(
 # Ok::<(), tools_rs::ToolError>(())
 ```
 
+## Shared Context
+
+Tools often need access to shared resources — database connections, HTTP
+clients, caches. If a tool's **first parameter is named `ctx`**, the macro
+treats it as a shared context that the collection injects at call time.
+Callers only pass the "real" arguments; `ctx` never appears in the JSON
+schema.
+
+```rust
+use std::sync::Arc;
+use tools_rs::{tool, ToolCollection, FunctionCall};
+use tools_core::NoMeta;
+
+struct Db {
+    url: String,
+}
+
+#[tool]
+/// Look up a user by name.
+async fn find_user(ctx: Db, name: String) -> String {
+    format!("[{}] SELECT * FROM users WHERE name = '{name}'", ctx.url)
+}
+
+#[tool]
+/// A plain tool — no context needed.
+async fn ping() -> String { "pong".into() }
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let db = Arc::new(Db { url: "postgres://localhost/app".into() });
+
+    let tools = ToolCollection::<NoMeta>::builder()
+        .with_context(db)
+        .collect()?;
+
+    // Caller never mentions ctx — only the "real" args:
+    let resp = tools.call(FunctionCall::new(
+        "find_user".into(),
+        serde_json::json!({ "name": "Alice" }),
+    )).await?;
+    println!("{}", resp.result);
+    Ok(())
+}
+```
+
+### How it works
+
+1. **Macro detection** — if the first parameter is named `ctx`, it is
+   excluded from the JSON schema wrapper struct. The macro rewrites the
+   emitted function signature from `ctx: T` to `ctx: Arc<T>` so that field
+   access and method calls work via `Deref`.
+2. **Builder** — `ToolCollection::builder().with_context(arc).collect()`
+   stores the `Arc<T>` and validates at startup that every context-requiring
+   tool expects the same type (via `TypeId` comparison). A mismatch produces
+   a clear `CtxTypeMismatch` error.
+3. **Call-time injection** — `collection.call(...)` passes the stored
+   context into the closure. Non-context tools ignore it.
+
+### Important: write `ctx: T`, not `ctx: Arc<T>`
+
+The macro wraps the type in `Arc` automatically. Writing `ctx: Arc<T>`
+produces a compile error to prevent accidental double-wrapping.
+
+### Interior mutability
+
+`Arc<T>` is immutable, but you can wrap an interior-mutable type:
+
+```rust
+use std::sync::Mutex;
+# use tools_rs::tool;
+
+struct Cache { entries: Vec<String> }
+
+#[tool]
+/// Record a cache hit.
+async fn record(ctx: Mutex<Cache>, key: String) -> String {
+    ctx.lock().unwrap().entries.push(key.clone());
+    format!("recorded {key}")
+}
+```
+
+The builder receives `Arc::new(Mutex::new(cache))`. The tool sees
+`Arc<Mutex<Cache>>` via Deref, so `ctx.lock()` works directly.
+
+### Context + metadata
+
+Context and metadata are orthogonal. Combine them freely:
+
+```rust
+# use std::sync::Arc;
+# use serde::Deserialize;
+# use tools_rs::{tool, ToolCollection};
+# struct Db { url: String }
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct Policy { requires_approval: bool }
+
+#[tool(requires_approval = true)]
+/// Drop a table — requires approval.
+async fn drop_table(ctx: Db, table: String) -> String {
+    format!("[{}] DROP TABLE {table}", ctx.url)
+}
+
+# fn example() -> Result<(), tools_rs::ToolError> {
+let tools = ToolCollection::<Policy>::builder()
+    .with_context(Arc::new(Db { url: "pg://localhost".into() }))
+    .collect()?;
+
+let meta = tools.meta("drop_table").unwrap();
+assert!(meta.requires_approval);
+# Ok(())
+# }
+```
+
+### Without context
+
+`collect_tools()` and `ToolCollection::collect_tools()` still work for
+collections that don't need context. If any tool in the inventory requires
+context and you call `collect_tools()` without the builder, it fails with
+`ToolError::MissingCtx` at startup.
+
 ## Examples
 
 Check out the [examples directory](examples/) for comprehensive sample code:
@@ -333,6 +455,12 @@ cargo run --example schema
 
 # Run the newtype demo - custom type wrapping examples
 cargo run --example newtype_demo
+
+# Run the HITL example - human-in-the-loop approval gating with metadata
+cargo run --example hitl
+
+# Run the context example - shared context injection
+cargo run --example context
 ```
 
 Each example demonstrates different aspects of the framework:
@@ -341,6 +469,8 @@ Each example demonstrates different aspects of the framework:
 - **function_declarations**: Complete LLM integration workflow with JSON schema generation
 - **schema**: Advanced schema generation for complex nested types and collections
 - **newtype_demo**: Working with custom wrapper types and serialization patterns
+- **hitl**: Human-in-the-loop approval gating using typed metadata
+- **context**: Shared context injection via `ToolCollection::builder().with_context(...)`
 
 ## API Reference
 
@@ -355,17 +485,20 @@ Each example demonstrates different aspects of the framework:
 
 ### Core Types
 
-- `ToolCollection` - Container for registered tools with execution capabilities
+- `ToolCollection<M>` - Container for registered tools, generic over metadata type `M` (defaults to `NoMeta`)
+- `CollectionBuilder<M>` - Builder for constructing collections with shared context
+- `ToolEntry<M>` - A single tool entry with its function, declaration, and metadata
 - `FunctionCall` - Represents a tool invocation with id, name, and arguments
 - `FunctionResponse` - Represents the response of a tool invocation with matching id to call, name, and result
 - `ToolError` - Comprehensive error type for tool operations
+- `NoMeta` - Default metadata type that ignores all `#[tool(...)]` attributes
 - `ToolSchema` - Trait for automatic JSON schema generation
 - `ToolRegistration` - Internal representation of registered tools
 - `FunctionDecl` - LLM-compatible function declaration structure
 
 ### Macros
 
-- `#[tool]` - Attribute macro for automatic tool registration
+- `#[tool]` - Attribute macro for automatic tool registration. Accepts flat `key = value` attributes for metadata. Detects `ctx` as a reserved first parameter for shared context injection.
 - `#[derive(ToolSchema)]` - Derive macro for automatic schema generation
 
 ## Error Handling

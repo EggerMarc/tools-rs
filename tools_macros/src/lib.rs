@@ -253,8 +253,16 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
         .first()
         .map_or(false, |(ident, _)| ident == "ctx")
     {
-        let ctx_ty = all_params[0].1.clone();
-        (Some(ctx_ty), all_params[1..].to_vec())
+        let ctx_ty = &all_params[0].1;
+        // Reject `ctx: Arc<T>` — we wrap in Arc internally, so the user
+        // must write `ctx: T` (not `ctx: Arc<T>`).
+        if is_arc_type(ctx_ty) {
+            abort!(
+                ctx_ty,
+                "`ctx` must be typed as `T`, not `Arc<T>` — the `#[tool]` macro wraps it in `Arc` automatically"
+            );
+        }
+        (Some(ctx_ty.clone()), all_params[1..].to_vec())
     } else {
         (None, all_params)
     };
@@ -462,6 +470,17 @@ fn attr_expr_to_json(e: &Expr) -> serde_json::Value {
         },
         _ => abort!(e, "attribute values must be bool/int/float/string literals"),
     }
+}
+
+/// Returns `true` if the type looks like `Arc<_>` (or `std::sync::Arc<_>`).
+fn is_arc_type(ty: &Type) -> bool {
+    if let Type::Path(TypePath { path, .. }) = ty {
+        if let Some(last) = path.segments.last() {
+            return last.ident == "Arc"
+                && matches!(last.arguments, syn::PathArguments::AngleBracketed(_));
+        }
+    }
+    false
 }
 
 #[cfg(test)]
