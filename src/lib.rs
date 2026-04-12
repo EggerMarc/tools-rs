@@ -50,9 +50,8 @@
 
 // Re-export core functionality
 pub use tools_core::{
-    DeserializationError, FunctionCall, FunctionDecl, FunctionResponse, ToolCollection, ToolError,
-    ToolMetadata, ToolRegistration, TypeSignature,
-    CallId
+    CallId, CollectionBuilder, DeserializationError, FunctionCall, FunctionDecl, FunctionResponse,
+    ToolCollection, ToolError, ToolMetadata, ToolRegistration, TypeSignature,
 };
 
 // Re-export schema functionality (trait from tools_core)

@@ -48,3 +48,7 @@ path = "chatbot/main.rs"
 [[example]]
 name = "hitl"
 path = "hitl/main.rs"
+
+[[example]]
+name = "context"
+path = "context/main.rs"

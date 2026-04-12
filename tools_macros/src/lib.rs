@@ -230,7 +230,8 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
     let doc_lit = LitStr::new(&docs(&func.attrs), Span::call_site());
 
     // ───────── Inputs → wrapper struct fields ─────────
-    let (idents, types): (Vec<_>, Vec<_>) = func
+    // Detect reserved `ctx` first parameter.
+    let all_params: Vec<_> = func
         .sig
         .inputs
         .iter()
@@ -243,16 +244,101 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             _ => abort!(arg, "`#[tool]` may not be used on `self` methods"),
         })
-        .unzip();
+        .collect();
+
+    // If the first parameter is named `ctx`, treat it as context injection.
+    // The user writes `ctx: T`; we rewrite the emitted fn to `ctx: Arc<T>`
+    // so that field access and method calls work via Deref.
+    let (ctx_inner_ty, param_pairs) = if all_params
+        .first()
+        .map_or(false, |(ident, _)| ident == "ctx")
+    {
+        let ctx_ty = &all_params[0].1;
+        // Reject `ctx: Arc<T>` — we wrap in Arc internally, so the user
+        // must write `ctx: T` (not `ctx: Arc<T>`).
+        if is_arc_type(ctx_ty) {
+            abort!(
+                ctx_ty,
+                "`ctx` must be typed as `T`, not `Arc<T>` — the `#[tool]` macro wraps it in `Arc` automatically"
+            );
+        }
+        (Some(ctx_ty.clone()), all_params[1..].to_vec())
+    } else {
+        (None, all_params)
+    };
+
+    let (idents, types): (Vec<_>, Vec<_>) = param_pairs.into_iter().unzip();
 
     // ───────── Generated helper idents ─────────
     let wrapper_ident = Ident::new(&format!("__TOOL_INPUT_{fn_name}"), Span::call_site());
     let schema_fn = Ident::new(&format!("__SCHEMA_FOR_{fn_name}"), Span::call_site());
     let crate_path = get_crate_path();
 
+    // ───────── Context-dependent codegen ─────────
+    let (closure_body, needs_ctx_lit, ctx_type_id_expr, ctx_type_name_lit) =
+        if let Some(ref inner_ty) = ctx_inner_ty {
+            let type_name_str = quote!(#inner_ty).to_string();
+            let type_name_lit = LitStr::new(&type_name_str, Span::call_site());
+            (
+                quote! {
+                    |v, ctx_opt| ::std::boxed::Box::pin(async move {
+                        let ctx_any = ctx_opt.ok_or_else(|| #crate_path::ToolError::MissingCtx {
+                            tool: #fn_name_str,
+                        })?;
+                        let ctx: ::std::sync::Arc<#inner_ty> =
+                            ctx_any.downcast::<#inner_ty>().map_err(|_| {
+                                #crate_path::ToolError::Runtime(
+                                    "context downcast failed".to_string(),
+                                )
+                            })?;
+                        let arg: #wrapper_ident =
+                            ::serde_json::from_value(v)
+                                .map_err(#crate_path::DeserializationError::from)?;
+                        let out = #fn_name(ctx, #( arg.#idents ),* ).await;
+                        ::serde_json::to_value(out)
+                            .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
+                    })
+                },
+                quote!(true),
+                quote!(Some(|| ::std::any::TypeId::of::<#inner_ty>())),
+                type_name_lit,
+            )
+        } else {
+            let empty_name = LitStr::new("", Span::call_site());
+            (
+                quote! {
+                    |v, _ctx| ::std::boxed::Box::pin(async move {
+                        let arg: #wrapper_ident =
+                            ::serde_json::from_value(v)
+                                .map_err(#crate_path::DeserializationError::from)?;
+                        let out = #fn_name( #( arg.#idents ),* ).await;
+                        ::serde_json::to_value(out)
+                            .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
+                    })
+                },
+                quote!(false),
+                quote!(None),
+                empty_name,
+            )
+        };
+
+    // ───────── Rewrite fn signature if ctx detected ─────────
+    // User wrote `ctx: T`, emit `ctx: Arc<T>` so Deref covers .field / .method().
+    let emitted_func = if let Some(ref inner_ty) = ctx_inner_ty {
+        let mut func_out = func.clone();
+        if let Some(first_arg) = func_out.sig.inputs.first_mut() {
+            if let FnArg::Typed(pat_type) = first_arg {
+                pat_type.ty = Box::new(syn::parse_quote!(::std::sync::Arc<#inner_ty>));
+            }
+        }
+        func_out
+    } else {
+        func
+    };
+
     // ───────── Macro expansion ─────────
     TokenStream::from(quote! {
-        #func
+        #emitted_func
 
         #[allow(non_camel_case_types)]
         #[derive(::serde::Deserialize, tools_macros::ToolSchema)]
@@ -267,16 +353,12 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
             #crate_path::ToolRegistration {
                 name: #fn_name_str,
                 doc: #doc_lit,
-                f: |v| ::std::boxed::Box::pin(async move {
-                    let arg: #wrapper_ident =
-                        ::serde_json::from_value(v)
-                            .map_err(#crate_path::DeserializationError::from)?;
-                    let out = #fn_name( #( arg.#idents ),* ).await;
-                    ::serde_json::to_value(out)
-                        .map_err(|e| #crate_path::ToolError::Runtime(e.to_string()))
-                }),
+                f: #closure_body,
                 param_schema: || #schema_fn::<#wrapper_ident>(),
                 meta_json: #meta_lit,
+                needs_ctx: #needs_ctx_lit,
+                ctx_type_id: #ctx_type_id_expr,
+                ctx_type_name: #ctx_type_name_lit,
             }
         }
     })
@@ -388,6 +470,17 @@ fn attr_expr_to_json(e: &Expr) -> serde_json::Value {
         },
         _ => abort!(e, "attribute values must be bool/int/float/string literals"),
     }
+}
+
+/// Returns `true` if the type looks like `Arc<_>` (or `std::sync::Arc<_>`).
+fn is_arc_type(ty: &Type) -> bool {
+    if let Type::Path(TypePath { path, .. }) = ty {
+        if let Some(last) = path.segments.last() {
+            return last.ident == "Arc"
+                && matches!(last.arguments, syn::PathArguments::AngleBracketed(_));
+        }
+    }
+    false
 }
 
 #[cfg(test)]
