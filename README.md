@@ -692,47 +692,53 @@ let declarations = tools.json()?;
 println!("Function declarations: {}", serde_json::to_string_pretty(&declarations)?);
 ```
 
-## Scripting Language Tools (FFI)
+## Scripting Language Tools (FFI) — Experimental
 
-Tools-rs supports registering tools written in scripting languages alongside
-native Rust tools. End users can drop a script into a config folder and have
-it available as an LLM tool — no Rust knowledge required.
+Tools-rs is being designed to support registering tools written in scripting
+languages alongside native Rust tools. The builder infrastructure
+(`ToolsBuilder`, `Language`, `RawToolDef`, `from_path`) is in place, but
+**language adapters are not yet implemented** — calling
+`ToolsBuilder::new().with_language(...).from_path(...).collect()` currently
+returns a "not yet implemented" error. See `tests/ffi_builder.rs` for the
+current status.
 
-### Design
+### Planned design
 
 - **One language per builder** — no collection gymnastics. Want Python and Lua?
   Build two collections.
-- **Package manager agnostic** — we don't run `pip install` or `npm install`.
+- **Package manager agnostic** — we won't run `pip install` or `npm install`.
   Users set up their own environment (venv, node_modules, etc). The adapter
   detects and uses whatever exists.
-- **TypeScript = JavaScript** — we accept `.js` files. Users transpile their
-  own TypeScript.
+- **TypeScript = JavaScript** — we will accept `.js` files. Users transpile
+  their own TypeScript.
+
+The target API (not yet functional):
 
 ```rust
-use tools_rs::ToolsBuilder;
+use tools_rs::{Language, ToolsBuilder};
 
 // Python tools (requires `python` feature)
 let py_tools = ToolsBuilder::new()
     .with_language(Language::Python)
-    .from_path("~/.config/myapp/tools/python/")
+    .from_path("/home/user/.config/myapp/tools/python/")
     .collect()?;
 
 // Lua tools (requires `lua` feature)
 let lua_tools = ToolsBuilder::new()
     .with_language(Language::Lua)
-    .from_path("~/.config/myapp/tools/lua/")
+    .from_path("/home/user/.config/myapp/tools/lua/")
     .collect()?;
 ```
 
-### Supported Languages
+### Planned language support
 
 | Language | Feature | Interpreter | Convention |
 |---|---|---|---|
 | Python | `python` | pyo3 | `@tool` decorator, type hints, docstrings |
-| Lua | `lua` | mlua | `Tool` table with `description`, `params`, `call` |
+| Lua | `lua` | mlua | LuaLS `---` annotations on named functions |
 | JavaScript | `js` | boa_engine | `Tool` object export |
 
-### Python example
+### Python convention (planned)
 
 ```python
 from tools_rs import tool
@@ -750,26 +756,22 @@ def weather(city: str, units: str = "celsius") -> str:
     return resp.json()["current_condition"][0]["temp_C"]
 ```
 
-### Lua example
+### Lua convention (planned)
 
 ```lua
-Tool = {
-    description = "Summarizes text to a maximum length",
-    meta = { requires_approval = false },
-    params = {
-        text = "The text to summarize",
-        max_length = "(number) Maximum output length",
-    },
-}
-
-function Tool.call(args)
-    return args.text:sub(1, args.max_length) .. "..."
+--- Get current weather for a city.
+--- @param city string City name to look up
+--- @param units? string Temperature unit (celsius or fahrenheit)
+--- @meta requires_approval false
+function weather(args)
+    -- ...
+    return result
 end
 ```
 
-### Workspace structure
+### Planned workspace structure
 
-```
+```text
 tools-rs/
 ├── tools_core/             # Language enum, RawToolDef, builder
 ├── tools_macros/           # #[tool], ToolSchema
