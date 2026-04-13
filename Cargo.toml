@@ -12,7 +12,7 @@ name = "tools_rs"
 path = "src/lib.rs"
 
 [workspace]
-members  = ["tools_core", "tools_macros", "examples"]
+members  = ["tools_core", "tools_macros", "examples", "ffi/tools_python"]
 resolver = "2"
 
 [workspace.package]
