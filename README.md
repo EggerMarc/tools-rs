@@ -692,6 +692,107 @@ let declarations = tools.json()?;
 println!("Function declarations: {}", serde_json::to_string_pretty(&declarations)?);
 ```
 
+## Scripting Language Tools (FFI)
+
+Tools-rs supports registering tools written in scripting languages alongside
+native Rust tools. End users can drop a script into a config folder and have
+it available as an LLM tool — no Rust knowledge required.
+
+### Design
+
+- **One language per builder** — no collection gymnastics. Want Python and Lua?
+  Build two collections.
+- **Package manager agnostic** — we don't run `pip install` or `npm install`.
+  Users set up their own environment (venv, node_modules, etc). The adapter
+  detects and uses whatever exists.
+- **TypeScript = JavaScript** — we accept `.js` files. Users transpile their
+  own TypeScript.
+
+```rust
+use tools_rs::ToolsBuilder;
+
+// Python tools (requires `python` feature)
+let py_tools = ToolsBuilder::new()
+    .with_language(Language::Python)
+    .from_path("~/.config/myapp/tools/python/")
+    .collect()?;
+
+// Lua tools (requires `lua` feature)
+let lua_tools = ToolsBuilder::new()
+    .with_language(Language::Lua)
+    .from_path("~/.config/myapp/tools/lua/")
+    .collect()?;
+```
+
+### Supported Languages
+
+| Language | Feature | Interpreter | Convention |
+|---|---|---|---|
+| Python | `python` | pyo3 | `@tool` decorator, type hints, docstrings |
+| Lua | `lua` | mlua | `Tool` table with `description`, `params`, `call` |
+| JavaScript | `js` | boa_engine | `Tool` object export |
+
+### Python example
+
+```python
+from tools_rs import tool
+
+@tool(requires_approval=False, cost_tier=1)
+def weather(city: str, units: str = "celsius") -> str:
+    """Get current weather for a city.
+
+    Args:
+        city: City name to look up
+        units: Temperature unit (celsius or fahrenheit)
+    """
+    import requests
+    resp = requests.get(f"https://wttr.in/{city}?format=j1")
+    return resp.json()["current_condition"][0]["temp_C"]
+```
+
+### Lua example
+
+```lua
+Tool = {
+    description = "Summarizes text to a maximum length",
+    meta = { requires_approval = false },
+    params = {
+        text = "The text to summarize",
+        max_length = "(number) Maximum output length",
+    },
+}
+
+function Tool.call(args)
+    return args.text:sub(1, args.max_length) .. "..."
+end
+```
+
+### Workspace structure
+
+```
+tools-rs/
+├── tools_core/             # Language enum, RawToolDef, builder
+├── tools_macros/           # #[tool], ToolSchema
+├── ffi/
+│   ├── tools_python/       # pyo3 adapter
+│   ├── tools_lua/          # mlua adapter
+│   └── tools_js/           # boa_engine adapter
+├── src/                    # tools-rs facade crate
+└── examples/
+```
+
+## Roadmap
+
+- [x] Core framework — `#[tool]` macro, `ToolCollection`, JSON schema generation
+- [x] Tool metadata — `#[tool(key = value)]` with typed `ToolCollection<M>`
+- [x] Shared context — `ctx` parameter injection via `ToolCollection::builder()`
+- [x] Typestate builder — `ToolsBuilder` with `Blank`/`Native`/`Scripted` states
+- [x] Raw registration — `register_raw()` for pre-built schemas
+- [ ] FFI foundation — `Language` enum, `RawToolDef`, `from_path` on builder
+- [ ] Python adapter — `ffi/tools_python/` with `@tool` decorator
+- [ ] Lua adapter — `ffi/tools_lua/` with `Tool` table convention
+- [ ] JavaScript adapter — `ffi/tools_js/` with `Tool` object export
+
 ## Contributing
 
 We welcome contributions!
