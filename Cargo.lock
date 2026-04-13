@@ -981,6 +981,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "python"
+version = "0.3.3"
+dependencies = [
+ "pyo3",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1462,11 +1471,11 @@ dependencies = [
  "futures",
  "inventory",
  "once_cell",
+ "python",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
- "tools_python",
  "uuid",
 ]
 
@@ -1481,15 +1490,6 @@ dependencies = [
  "quote",
  "serde_json",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "tools_python"
-version = "0.3.3"
-dependencies = [
- "pyo3",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

@@ -66,7 +66,7 @@ pub struct RawToolDef {
 
 /// Load tool definitions from a path using the given language adapter.
 ///
-/// `Language::Python` loads via `tools_python::load` and converts the
+/// `Language::Python` loads via `python::load` and converts the
 /// results to [`RawToolDef`]. Lua and JavaScript are not yet
 /// implemented. Errors are propagated as [`ToolError::Runtime`].
 pub(crate) fn load_language(
@@ -76,7 +76,7 @@ pub(crate) fn load_language(
     match lang {
         #[cfg(feature = "python")]
         Language::Python => {
-            let py_defs = tools_python::load(path)
+            let py_defs = python::load(path)
                 .map_err(ToolError::Runtime)?;
             Ok(py_defs.into_iter().map(py_tool_to_raw).collect())
         }
@@ -108,9 +108,9 @@ pub(crate) fn leak_string(s: String) -> &'static str {
 // ADAPTER CONVERSIONS
 // ============================================================================
 
-/// Convert a [`tools_python::PyToolDef`] into a [`RawToolDef`].
+/// Convert a [`python::PyToolDef`] into a [`RawToolDef`].
 #[cfg(feature = "python")]
-fn py_tool_to_raw(d: tools_python::PyToolDef) -> RawToolDef {
+fn py_tool_to_raw(d: python::PyToolDef) -> RawToolDef {
     let func = d.func;
     RawToolDef {
         name: d.name,
