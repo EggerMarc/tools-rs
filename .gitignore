@@ -21,3 +21,11 @@ target/
 
 *.env
 .env
+
+# Python build artifacts
+ffi/python/dist/
+ffi/python/*.egg-info/
+**/__pycache__/
+
+# Rust output (redundant with target/ but explicit)
+rust_out/

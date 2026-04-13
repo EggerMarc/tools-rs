@@ -6,7 +6,7 @@ license.workspace      = true
 name                   = "tools_python"
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.3.2"
+version                = "0.3.3"
 
 [dependencies]
 pyo3       = { version = "0.24", features = ["auto-initialize"] }

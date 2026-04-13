@@ -18,7 +18,7 @@ serde_json = "1.0.140"
 thiserror  = "2.0.12"
 tokio      = { version = "1.45.1", features = ["macros", "rt-multi-thread", "time", "sync"] }
 uuid = { version = "1.18.1", features = ["v4"] }
-tools_python = { path = "../ffi/tools_python", optional = true }
+tools_python = { path = "../ffi/python", optional = true }
 
 [features]
 default = []
