@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod builder;
+pub use builder::ToolsBuilder;
+
 use core::fmt;
 use std::{
     any::{Any, TypeId},
@@ -525,6 +528,44 @@ impl<M> ToolCollection<M> {
         }
     }
 
+    /// Register a tool from a pre-built JSON schema and a raw async closure.
+    ///
+    /// Unlike [`register`][Self::register], this bypasses `ToolSchema`
+    /// derivation — the caller supplies the JSON schema directly. The
+    /// closure receives only the JSON arguments (no context). This is the
+    /// foundation for FFI adapters that register tools from scripting
+    /// languages.
+    ///
+    /// Pass `()` as `meta` for `ToolCollection<NoMeta>`; pass an `M` for
+    /// typed collections.
+    pub fn register_raw<A: MetaArg<M>>(
+        &mut self,
+        name: &'static str,
+        description: &'static str,
+        parameters: Value,
+        func: impl Fn(Value) -> BoxFuture<'static, Result<Value, ToolError>> + Send + Sync + 'static,
+        meta: A,
+    ) -> Result<&mut Self, ToolError> {
+        if self.entries.contains_key(name) {
+            return Err(ToolError::AlreadyRegistered { name });
+        }
+
+        let boxed: Arc<ToolFunc> = Arc::new(
+            move |raw: Value, _ctx: Option<Arc<dyn Any + Send + Sync>>| func(raw),
+        );
+
+        self.entries.insert(
+            name,
+            ToolEntry {
+                func: boxed,
+                decl: FunctionDecl::new(name, description, parameters),
+                meta: meta.into_meta(),
+            },
+        );
+
+        Ok(self)
+    }
+
     /// Register a tool programmatically. Pass `()` as `meta` for
     /// `ToolCollection<NoMeta>`; pass an `M` for typed collections.
     /// Passing `()` to a typed collection is a compile error.
@@ -628,29 +669,7 @@ impl<M: DeserializeOwned> ToolCollection<M> {
     ///
     /// For accumulated, CI-friendly validation use [`validate_tool_attrs`].
     pub fn collect_tools() -> Result<Self, ToolError> {
-        let mut hub = Self::new();
-
-        for reg in inventory::iter::<ToolRegistration> {
-            if reg.needs_ctx {
-                return Err(ToolError::MissingCtx { tool: reg.name });
-            }
-
-            let meta: M = serde_json::from_str(reg.meta_json).map_err(|e| ToolError::BadMeta {
-                tool: reg.name,
-                error: e.to_string(),
-            })?;
-
-            hub.entries.insert(
-                reg.name,
-                ToolEntry {
-                    func: Arc::new(reg.f),
-                    decl: FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
-                    meta,
-                },
-            );
-        }
-
-        Ok(hub)
+        collect_inventory_inner(None, None, "")
     }
 }
 
@@ -717,6 +736,52 @@ pub fn validate_tool_attrs_for<M: DeserializeOwned>(
 inventory::collect!(ToolRegistration);
 
 // ============================================================================
+// SHARED INVENTORY HELPER
+// ============================================================================
+
+/// Shared logic for collecting tools from the global `inventory`. Used by
+/// both [`CollectionBuilder::collect`] and [`ToolsBuilder::collect`].
+pub(crate) fn collect_inventory_inner<M: DeserializeOwned>(
+    ctx: Option<Arc<dyn Any + Send + Sync>>,
+    ctx_type_id: Option<TypeId>,
+    ctx_type_name: &str,
+) -> Result<ToolCollection<M>, ToolError> {
+    let mut entries = HashMap::new();
+
+    for reg in inventory::iter::<ToolRegistration> {
+        if reg.needs_ctx {
+            let Some(provided_id) = ctx_type_id else {
+                return Err(ToolError::MissingCtx { tool: reg.name });
+            };
+            let expected_id = (reg.ctx_type_id.unwrap())();
+            if expected_id != provided_id {
+                return Err(ToolError::CtxTypeMismatch {
+                    tool: reg.name,
+                    expected: reg.ctx_type_name.to_string(),
+                    got: ctx_type_name.to_string(),
+                });
+            }
+        }
+
+        let meta: M = serde_json::from_str(reg.meta_json).map_err(|e| ToolError::BadMeta {
+            tool: reg.name,
+            error: e.to_string(),
+        })?;
+
+        entries.insert(
+            reg.name,
+            ToolEntry {
+                func: Arc::new(reg.f),
+                decl: FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
+                meta,
+            },
+        );
+    }
+
+    Ok(ToolCollection { entries, ctx })
+}
+
+// ============================================================================
 // COLLECTION BUILDER
 // ============================================================================
 
@@ -756,42 +821,7 @@ impl<M: DeserializeOwned> CollectionBuilder<M> {
     /// - Every `needs_ctx` tool's expected `TypeId` matches the builder's.
     /// - No `needs_ctx` tool exists when no context was provided.
     pub fn collect(self) -> Result<ToolCollection<M>, ToolError> {
-        let mut entries = HashMap::new();
-
-        for reg in inventory::iter::<ToolRegistration> {
-            if reg.needs_ctx {
-                let Some(provided_id) = self.ctx_type_id else {
-                    return Err(ToolError::MissingCtx { tool: reg.name });
-                };
-                let expected_id = (reg.ctx_type_id.unwrap())();
-                if expected_id != provided_id {
-                    return Err(ToolError::CtxTypeMismatch {
-                        tool: reg.name,
-                        expected: reg.ctx_type_name.to_string(),
-                        got: self.ctx_type_name.to_string(),
-                    });
-                }
-            }
-
-            let meta: M = serde_json::from_str(reg.meta_json).map_err(|e| ToolError::BadMeta {
-                tool: reg.name,
-                error: e.to_string(),
-            })?;
-
-            entries.insert(
-                reg.name,
-                ToolEntry {
-                    func: Arc::new(reg.f),
-                    decl: FunctionDecl::new(reg.name, reg.doc, (reg.param_schema)()),
-                    meta,
-                },
-            );
-        }
-
-        Ok(ToolCollection {
-            entries,
-            ctx: self.ctx,
-        })
+        collect_inventory_inner(self.ctx, self.ctx_type_id, self.ctx_type_name)
     }
 }
 
