@@ -66,8 +66,9 @@ pub struct RawToolDef {
 
 /// Load tool definitions from a path using the given language adapter.
 ///
-/// Currently all variants return a "not yet implemented" error. Each
-/// language adapter PR will fill in its match arm.
+/// `Language::Python` loads via `tools_python::load` and converts the
+/// results to [`RawToolDef`]. Lua and JavaScript are not yet
+/// implemented. Errors are propagated as [`ToolError::Runtime`].
 pub(crate) fn load_language(
     lang: Language,
     path: &Path,

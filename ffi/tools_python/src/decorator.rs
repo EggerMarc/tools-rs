@@ -29,10 +29,25 @@ def _python_type_to_json(t):
         return {"type": "array", "items": _python_type_to_json(args[0])}
     if origin is typing.Literal:
         values = list(getattr(t, "__args__", ()))
-        return {"type": "string", "enum": values}
+        schema = {"enum": values}
+        types = set()
+        for v in values:
+            if isinstance(v, str): types.add("string")
+            elif isinstance(v, bool): types.add("boolean")
+            elif isinstance(v, int): types.add("integer")
+            elif isinstance(v, float): types.add("number")
+        if len(types) == 1:
+            schema["type"] = types.pop()
+        return schema
     if origin is typing.Union:
-        args = getattr(t, "__args__", ())
-        return {"anyOf": [_python_type_to_json(a) for a in args]}
+        args = [a for a in getattr(t, "__args__", ()) if a is not type(None)]
+        null = any(a is type(None) for a in getattr(t, "__args__", ()))
+        parts = [_python_type_to_json(a) for a in args]
+        if null:
+            parts.append({"type": "null"})
+        if len(parts) == 1:
+            return parts[0]
+        return {"anyOf": parts}
     return {"type": "string"}
 
 def _parse_args_block(doc):

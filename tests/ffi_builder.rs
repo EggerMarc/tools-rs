@@ -20,7 +20,7 @@ fn scripted_no_paths_returns_collection() {
 }
 
 #[test]
-fn scripted_with_invalid_path_errors() {
+fn scripted_with_nonexistent_path_errors() {
     let err = ToolsBuilder::new()
         .with_language(Language::Python)
         .from_path("/nonexistent/path/")
@@ -28,9 +28,11 @@ fn scripted_with_invalid_path_errors() {
         .err()
         .expect("should error — path does not exist");
 
+    // Adapter rejects non-existent or non-directory paths
+    let msg = err.to_string();
     assert!(
-        err.to_string().contains("not a directory"),
-        "unexpected error: {err}"
+        msg.contains("not a directory") || msg.contains("No such file"),
+        "unexpected error: {msg}"
     );
 }
 

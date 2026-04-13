@@ -52,10 +52,14 @@ pub fn load(dir: &Path) -> Result<Vec<PyToolDef>, String> {
 
     let mut defs = Vec::new();
 
-    // Collect *.py files
-    let entries: Vec<_> = fs::read_dir(dir)
+    // Collect *.py files, propagating any directory iteration errors
+    let all_entries: Vec<fs::DirEntry> = fs::read_dir(dir)
         .map_err(|e| format!("Python adapter: failed to read directory {}: {e}", dir.display()))?
-        .filter_map(|e| e.ok())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Python adapter: failed to iterate directory {}: {e}", dir.display()))?;
+
+    let entries: Vec<_> = all_entries
+        .into_iter()
         .filter(|e| {
             e.path()
                 .extension()
@@ -68,22 +72,37 @@ pub fn load(dir: &Path) -> Result<Vec<PyToolDef>, String> {
     }
 
     Python::with_gil(|py| {
-        // Detect and configure venv if present
-        setup_venv(py, dir);
+        // Save original sys.path, restore it when done
+        let saved_path = save_sys_path(py)?;
 
-        for entry in &entries {
-            let file_path = entry.path();
-            let source = fs::read_to_string(&file_path).map_err(|e| {
-                format!(
-                    "Python adapter: failed to read {}: {e}",
-                    file_path.display()
-                )
-            })?;
+        // Add the tools directory itself so sibling imports work
+        let _ = add_to_sys_path(py, &dir.to_string_lossy());
 
-            let file_defs = load_file(py, &file_path, &source)?;
-            defs.extend(file_defs);
+        // Detect and add venv site-packages if present
+        if let Some(sp) = find_venv_site_packages(dir) {
+            let _ = add_to_sys_path(py, &sp);
         }
 
+        let result: Result<(), String> = (|| {
+            for entry in &entries {
+                let file_path = entry.path();
+                let source = fs::read_to_string(&file_path).map_err(|e| {
+                    format!(
+                        "Python adapter: failed to read {}: {e}",
+                        file_path.display()
+                    )
+                })?;
+
+                let file_defs = load_file(py, &file_path, &source)?;
+                defs.extend(file_defs);
+            }
+            Ok(())
+        })();
+
+        // Restore sys.path regardless of success/failure
+        let _ = restore_sys_path(py, &saved_path);
+
+        result?;
         Ok(defs)
     })
 }
@@ -255,29 +274,38 @@ fn json_to_py(py: Python<'_>, value: &Value) -> Result<PyObject, String> {
 // VENV DETECTION
 // ============================================================================
 
-/// If a `.venv` directory exists in or above `dir`, prepend its
-/// `site-packages` to `sys.path`.
-fn setup_venv(py: Python<'_>, dir: &Path) {
+/// Walk up from `dir` looking for a `.venv` with `site-packages`.
+/// Returns the site-packages path if found, None otherwise.
+fn find_venv_site_packages(dir: &Path) -> Option<String> {
     let mut search = Some(dir);
     while let Some(d) = search {
         let venv = d.join(".venv");
         if venv.is_dir() {
-            if let Ok(site_packages) = find_site_packages(&venv) {
-                let _ = add_to_sys_path(py, &site_packages);
-            }
-            return;
+            return find_site_packages(&venv).ok();
         }
         search = d.parent();
     }
+    None
 }
 
-/// Find `site-packages` inside a venv.
+/// Find `site-packages` inside a venv. Handles both Unix
+/// (`lib/pythonX.Y/site-packages`) and Windows (`Lib/site-packages`)
+/// layouts.
 fn find_site_packages(venv: &Path) -> Result<String, String> {
+    // Windows: Lib/site-packages
+    let win_sp = venv.join("Lib").join("site-packages");
+    if win_sp.is_dir() {
+        return win_sp
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or("non-UTF8 path".into());
+    }
+
+    // Unix: lib/pythonX.Y/site-packages
     let lib = venv.join("lib");
     if !lib.is_dir() {
         return Err("no lib/ in venv".into());
     }
-    // lib/pythonX.Y/site-packages
     for entry in fs::read_dir(&lib).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let sp = entry.path().join("site-packages");
@@ -289,6 +317,28 @@ fn find_site_packages(venv: &Path) -> Result<String, String> {
         }
     }
     Err("site-packages not found in venv".into())
+}
+
+// ============================================================================
+// SYS.PATH MANAGEMENT
+// ============================================================================
+
+/// Save the current `sys.path` as a Python list (shallow copy).
+fn save_sys_path(py: Python<'_>) -> Result<PyObject, String> {
+    let sys = py.import("sys").map_err(|e| format!("failed to import sys: {e}"))?;
+    let path = sys.getattr("path").map_err(|e| format!("failed to get sys.path: {e}"))?;
+    let copy = path
+        .call_method0("copy")
+        .map_err(|e| format!("failed to copy sys.path: {e}"))?;
+    Ok(copy.unbind())
+}
+
+/// Restore `sys.path` from a previously saved copy.
+fn restore_sys_path(py: Python<'_>, saved: &PyObject) -> Result<(), String> {
+    let sys = py.import("sys").map_err(|e| format!("failed to import sys: {e}"))?;
+    sys.setattr("path", saved.bind(py))
+        .map_err(|e| format!("failed to restore sys.path: {e}"))?;
+    Ok(())
 }
 
 /// Prepend a path to `sys.path`.
