@@ -1445,7 +1445,7 @@ dependencies = [
 
 [[package]]
 name = "tools-rs"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "inventory",
  "serde",
@@ -1457,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "tools_core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "futures",
  "inventory",
