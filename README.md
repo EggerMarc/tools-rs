@@ -72,7 +72,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tools-rs = "0.2.0"
+tools-rs = "0.3.1"
 tokio = { version = "1.45", features = ["macros", "rt-multi-thread"] }
 serde_json = "1.0"
 ```
@@ -439,6 +439,93 @@ collections that don't need context. If any tool in the inventory requires
 context and you call `collect_tools()` without the builder, it fails with
 `ToolError::MissingCtx` at startup.
 
+## ToolsBuilder (Typestate Builder)
+
+`ToolsBuilder` is a typestate-based builder for `ToolCollection` that
+enforces invariants at compile time. It is the recommended way to
+construct collections when you need context or typed metadata.
+
+```rust
+use std::sync::Arc;
+use serde::Deserialize;
+use tools_rs::{ToolsBuilder, ToolCollection, FunctionCall};
+
+struct AppState { db_url: String }
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct Policy { requires_approval: bool }
+
+# fn example() -> Result<(), tools_rs::ToolError> {
+// Simple — equivalent to collect_tools():
+let tools = ToolsBuilder::new().collect()?;
+
+// With context and typed metadata:
+let state = Arc::new(AppState { db_url: "pg://localhost".into() });
+let tools = ToolsBuilder::new()
+    .with_context(state)
+    .with_meta::<Policy>()
+    .collect()?;
+# Ok(())
+# }
+```
+
+### Typestate enforcement
+
+The builder uses typestate to prevent invalid combinations at compile
+time. Once `with_context` is called, the builder transitions to the
+`Native` state where `with_context` can no longer be called:
+
+```compile_fail
+use tools_rs::ToolsBuilder;
+use std::sync::Arc;
+
+// ERROR: with_context cannot be called twice
+let b = ToolsBuilder::new()
+    .with_context(Arc::new(42_u32))
+    .with_context(Arc::new(42_u32));
+```
+
+### Raw tool registration
+
+`register_raw` lets you register tools from a pre-built JSON schema
+and a raw async closure, bypassing `ToolSchema` derivation. This is
+useful for dynamic tool registration or tools coming from external
+sources.
+
+```rust
+use tools_rs::{ToolsBuilder, ToolCollection, FunctionCall};
+use serde_json::json;
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let mut tools: ToolCollection = ToolsBuilder::new().collect()?;
+
+tools.register_raw(
+    "echo",
+    "Echoes the input message back",
+    json!({
+        "type": "object",
+        "properties": {
+            "msg": { "type": "string", "description": "Message to echo" }
+        },
+        "required": ["msg"]
+    }),
+    |args| Box::pin(async move {
+        let msg = args.get("msg").and_then(|m| m.as_str()).unwrap_or("");
+        Ok(serde_json::Value::String(msg.to_string()))
+    }),
+    (),
+)?;
+
+let resp = tools.call(FunctionCall::new(
+    "echo".into(),
+    json!({ "msg": "hello" }),
+)).await?;
+assert_eq!(resp.result, json!("hello"));
+# Ok(())
+# }
+```
+
 ## Examples
 
 Check out the [examples directory](examples/) for comprehensive sample code:
@@ -486,6 +573,7 @@ Each example demonstrates different aspects of the framework:
 ### Core Types
 
 - `ToolCollection<M>` - Container for registered tools, generic over metadata type `M` (defaults to `NoMeta`)
+- `ToolsBuilder<S, M>` - Typestate builder for constructing collections with compile-time enforcement
 - `CollectionBuilder<M>` - Builder for constructing collections with shared context
 - `ToolEntry<M>` - A single tool entry with its function, declaration, and metadata
 - `FunctionCall` - Represents a tool invocation with id, name, and arguments
