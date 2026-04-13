@@ -1,7 +1,10 @@
 #![deny(unsafe_code)]
 
 pub mod builder;
+pub mod ffi;
+
 pub use builder::ToolsBuilder;
+pub use ffi::{Language, RawToolDef};
 
 use core::fmt;
 use std::{

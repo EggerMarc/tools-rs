@@ -692,6 +692,109 @@ let declarations = tools.json()?;
 println!("Function declarations: {}", serde_json::to_string_pretty(&declarations)?);
 ```
 
+## Scripting Language Tools (FFI) — Experimental
+
+Tools-rs is being designed to support registering tools written in scripting
+languages alongside native Rust tools. The builder infrastructure
+(`ToolsBuilder`, `Language`, `RawToolDef`, `from_path`) is in place, but
+**language adapters are not yet implemented** — calling
+`ToolsBuilder::new().with_language(...).from_path(...).collect()` currently
+returns a "not yet implemented" error. See `tests/ffi_builder.rs` for the
+current status.
+
+### Planned design
+
+- **One language per builder** — no collection gymnastics. Want Python and Lua?
+  Build two collections.
+- **Package manager agnostic** — we won't run `pip install` or `npm install`.
+  Users set up their own environment (venv, node_modules, etc). The adapter
+  detects and uses whatever exists.
+- **TypeScript = JavaScript** — we will accept `.js` files. Users transpile
+  their own TypeScript.
+
+The target API (not yet functional):
+
+```rust
+use tools_rs::{Language, ToolsBuilder};
+
+// Python tools (requires `python` feature)
+let py_tools = ToolsBuilder::new()
+    .with_language(Language::Python)
+    .from_path("/home/user/.config/myapp/tools/python/")
+    .collect()?;
+
+// Lua tools (requires `lua` feature)
+let lua_tools = ToolsBuilder::new()
+    .with_language(Language::Lua)
+    .from_path("/home/user/.config/myapp/tools/lua/")
+    .collect()?;
+```
+
+### Planned language support
+
+| Language | Feature | Interpreter | Convention |
+|---|---|---|---|
+| Python | `python` | pyo3 | `@tool` decorator, type hints, docstrings |
+| Lua | `lua` | mlua | LuaLS `---` annotations on named functions |
+| JavaScript | `js` | boa_engine | `Tool` object export |
+
+### Python convention (planned)
+
+```python
+from tools_rs import tool
+
+@tool(requires_approval=False, cost_tier=1)
+def weather(city: str, units: str = "celsius") -> str:
+    """Get current weather for a city.
+
+    Args:
+        city: City name to look up
+        units: Temperature unit (celsius or fahrenheit)
+    """
+    import requests
+    resp = requests.get(f"https://wttr.in/{city}?format=j1")
+    return resp.json()["current_condition"][0]["temp_C"]
+```
+
+### Lua convention (planned)
+
+```lua
+--- Get current weather for a city.
+--- @param city string City name to look up
+--- @param units? string Temperature unit (celsius or fahrenheit)
+--- @meta requires_approval false
+function weather(args)
+    -- ...
+    return result
+end
+```
+
+### Planned workspace structure
+
+```text
+tools-rs/
+├── tools_core/             # Language enum, RawToolDef, builder
+├── tools_macros/           # #[tool], ToolSchema
+├── ffi/
+│   ├── tools_python/       # pyo3 adapter
+│   ├── tools_lua/          # mlua adapter
+│   └── tools_js/           # boa_engine adapter
+├── src/                    # tools-rs facade crate
+└── examples/
+```
+
+## Roadmap
+
+- [x] Core framework — `#[tool]` macro, `ToolCollection`, JSON schema generation
+- [x] Tool metadata — `#[tool(key = value)]` with typed `ToolCollection<M>`
+- [x] Shared context — `ctx` parameter injection via `ToolCollection::builder()`
+- [x] Typestate builder — `ToolsBuilder` with `Blank`/`Native`/`Scripted` states
+- [x] Raw registration — `register_raw()` for pre-built schemas
+- [ ] FFI foundation — `Language` enum, `RawToolDef`, `from_path` on builder
+- [ ] Python adapter — `ffi/tools_python/` with `@tool` decorator
+- [ ] Lua adapter — `ffi/tools_lua/` with `Tool` table convention
+- [ ] JavaScript adapter — `ffi/tools_js/` with `Tool` object export
+
 ## Contributing
 
 We welcome contributions!
