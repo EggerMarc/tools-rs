@@ -20,32 +20,33 @@ fn scripted_no_paths_returns_collection() {
 }
 
 #[test]
-fn scripted_with_path_hits_stub() {
+fn scripted_with_invalid_path_errors() {
     let err = ToolsBuilder::new()
         .with_language(Language::Python)
-        .from_path("/nonexistent/script.py")
+        .from_path("/nonexistent/path/")
         .collect()
         .err()
-        .expect("should error — adapter not implemented");
+        .expect("should error — path does not exist");
 
     assert!(
-        err.to_string().contains("not yet implemented"),
+        err.to_string().contains("not a directory"),
         "unexpected error: {err}"
     );
 }
 
 #[test]
 fn scripted_from_path_chainable() {
+    // Both paths are invalid, but the builder accepts them — error
+    // comes at collect() time on the first path.
     let err = ToolsBuilder::new()
         .with_language(Language::Python)
-        .from_path("/first.py")
-        .from_path("/second.py")
+        .from_path("/nonexistent/first/")
+        .from_path("/nonexistent/second/")
         .collect()
         .err()
         .expect("should error on first path");
 
-    // Error should mention the first path
-    assert!(err.to_string().contains("first.py"));
+    assert!(err.to_string().contains("first"));
 }
 
 #[test]

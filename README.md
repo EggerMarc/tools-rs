@@ -103,6 +103,23 @@ Tools-rs requires **Rust 1.85** or later and supports:
 - Execute tools safely with full type checking
 - Handle errors gracefully with detailed context
 
+### Python FFI Support
+
+The `python` feature embeds a Python interpreter via
+[pyo3](https://pyo3.rs). Requirements:
+
+- **Python 3.10+** installed on the system (pyo3 links to the system
+  Python at build time)
+- **pyo3 0.24** currently supports up to Python 3.13. If your system
+  has Python 3.14+, set the environment variable before building:
+  ```bash
+  export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+  ```
+- Dependencies used by tool scripts (e.g. `requests`) must be installed
+  in the environment the interpreter can see — a virtualenv (`.venv/`)
+  in or above the tools directory, or system-wide. tools-rs does **not**
+  run `pip install`.
+
 ## Function Declarations for LLMs
 
 Tools-rs can automatically generate function declarations suitable for LLM APIs:
