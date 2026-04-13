@@ -17,12 +17,14 @@
 use std::{
     any::{Any, TypeId},
     marker::PhantomData,
+    path::PathBuf,
     sync::Arc,
 };
 
 use serde::de::DeserializeOwned;
 
 use crate::{NoMeta, ToolCollection, ToolError, collect_inventory_inner};
+use crate::ffi::{Language, leak_string, load_language};
 
 // ============================================================================
 // TYPESTATE MARKERS
@@ -62,6 +64,8 @@ struct BuilderInner {
     ctx: Option<Arc<dyn Any + Send + Sync>>,
     ctx_type_id: Option<TypeId>,
     ctx_type_name: &'static str,
+    language: Option<Language>,
+    script_paths: Vec<PathBuf>,
 }
 
 impl BuilderInner {
@@ -70,6 +74,8 @@ impl BuilderInner {
             ctx: None,
             ctx_type_id: None,
             ctx_type_name: "",
+            language: None,
+            script_paths: Vec::new(),
         }
     }
 }
@@ -132,6 +138,15 @@ impl<M> ToolsBuilder<Blank, M> {
     /// Set a shared context that will be injected into every tool whose
     /// first parameter is named `ctx`. Transitions to the [`Native`]
     /// state, locking out FFI adapter methods.
+    ///
+    /// ```compile_fail
+    /// # use tools_core::builder::ToolsBuilder;
+    /// # use std::sync::Arc;
+    /// // ERROR: with_language not available after with_context
+    /// let b = ToolsBuilder::new()
+    ///     .with_context(Arc::new(42_u32))
+    ///     .with_language(tools_core::Language::Python);
+    /// ```
     pub fn with_context<T: Send + Sync + 'static>(
         self,
         ctx: Arc<T>,
@@ -141,6 +156,35 @@ impl<M> ToolsBuilder<Blank, M> {
                 ctx: Some(ctx),
                 ctx_type_id: Some(TypeId::of::<T>()),
                 ctx_type_name: std::any::type_name::<T>(),
+                language: None,
+                script_paths: Vec::new(),
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    /// Set the scripting language for FFI tool loading. Transitions to
+    /// the [`Scripted`] state, locking out [`with_context`][Self::with_context].
+    ///
+    /// Use [`from_path`][ToolsBuilder::<Scripted, M>::from_path] to add
+    /// script directories after calling this.
+    ///
+    /// ```compile_fail
+    /// # use tools_core::builder::ToolsBuilder;
+    /// # use std::sync::Arc;
+    /// // ERROR: with_context not available after with_language
+    /// let b = ToolsBuilder::new()
+    ///     .with_language(tools_core::Language::Python)
+    ///     .with_context(Arc::new(42_u32));
+    /// ```
+    pub fn with_language(self, lang: Language) -> ToolsBuilder<Scripted, M> {
+        ToolsBuilder {
+            inner: BuilderInner {
+                language: Some(lang),
+                script_paths: Vec::new(),
+                ctx: None,
+                ctx_type_id: None,
+                ctx_type_name: "",
             },
             _marker: PhantomData,
         }
@@ -185,12 +229,47 @@ impl<M: DeserializeOwned> ToolsBuilder<Native, M> {
     }
 }
 
+// ── Scripted: from_path + collect ───────────────────────────────────
+
+impl<M> ToolsBuilder<Scripted, M> {
+    /// Add a script path to load tools from. Can be called multiple
+    /// times to load from several paths.
+    pub fn from_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.inner.script_paths.push(path.into());
+        self
+    }
+}
+
 impl<M: DeserializeOwned> ToolsBuilder<Scripted, M> {
-    /// Build the collection from the global tool inventory (no context).
-    /// In the future, this will also load scripts from configured FFI
-    /// adapter paths.
+    /// Build the collection. Collects `#[tool]` inventory tools (no
+    /// context), then loads scripted tools from configured paths via
+    /// the selected language adapter.
+    ///
+    /// No paths configured = inventory tools only.
     pub fn collect(self) -> Result<ToolCollection<M>, ToolError> {
-        collect_inventory_inner(None, None, "")
+        let lang = self
+            .inner
+            .language
+            .expect("Scripted state must have a language set");
+
+        let mut collection: ToolCollection<M> = collect_inventory_inner(None, None, "")?;
+
+        for path in &self.inner.script_paths {
+            let defs = load_language(lang, path)?;
+            for def in defs {
+                let name = leak_string(def.name);
+                let desc = leak_string(def.description);
+                let meta: M =
+                    serde_json::from_value(def.meta).map_err(|e| ToolError::BadMeta {
+                        tool: name,
+                        error: e.to_string(),
+                    })?;
+                let func = def.func;
+                collection.register_raw(name, desc, def.parameters, move |v| func(v), meta)?;
+            }
+        }
+
+        Ok(collection)
     }
 }
 
@@ -299,5 +378,46 @@ mod tests {
             .unwrap();
 
         assert_eq!(resp.result, json!(42));
+    }
+
+    #[cfg(feature = "python")]
+    #[test]
+    fn scripted_no_paths_collects_inventory() {
+        let tools: ToolCollection = ToolsBuilder::new()
+            .with_language(crate::Language::Python)
+            .collect()
+            .unwrap();
+
+        let _ = tools.json().unwrap();
+    }
+
+    #[cfg(feature = "python")]
+    #[test]
+    fn scripted_with_path_errors_not_implemented() {
+        let err = ToolsBuilder::new()
+            .with_language(crate::Language::Python)
+            .from_path("/some/script.py")
+            .collect()
+            .err()
+            .expect("should error");
+
+        assert!(
+            err.to_string().contains("not yet implemented"),
+            "expected 'not yet implemented', got: {err}"
+        );
+    }
+
+    #[cfg(feature = "python")]
+    #[test]
+    fn scripted_from_path_chainable() {
+        let err = ToolsBuilder::new()
+            .with_language(crate::Language::Python)
+            .from_path("/first.py")
+            .from_path("/second.py")
+            .collect()
+            .err()
+            .expect("should error");
+
+        assert!(err.to_string().contains("not yet implemented"));
     }
 }

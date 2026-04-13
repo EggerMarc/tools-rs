@@ -39,4 +39,7 @@ tools_macros         = { version="0.3.0", path = "./tools_macros" }
 
 [features]
 default = []
+python = ["tools_core/python"]
+lua = ["tools_core/lua"]
+js = ["tools_core/js"]
 
