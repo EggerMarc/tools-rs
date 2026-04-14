@@ -1,5 +1,8 @@
 //! FFI adapter types for scripting-language tool definitions.
 
+#[cfg(feature = "python")]
+pub(crate) mod python;
+
 use std::path::Path;
 
 use futures::future::BoxFuture;
@@ -66,20 +69,20 @@ pub struct RawToolDef {
 
 /// Load tool definitions from a path using the given language adapter.
 ///
-/// `Language::Python` loads via `python::load` and converts the
-/// results to [`RawToolDef`]. Lua and JavaScript are not yet
-/// implemented. Errors are propagated as [`ToolError::Runtime`].
+/// `Language::Python` loads via the `python` submodule. Lua and
+/// JavaScript are not yet implemented. Errors are propagated as
+/// [`ToolError::Runtime`].
 pub(crate) fn load_language(
     lang: Language,
+    #[cfg_attr(
+        not(any(feature = "python", feature = "lua", feature = "js")),
+        allow(unused_variables)
+    )]
     path: &Path,
 ) -> Result<Vec<RawToolDef>, ToolError> {
     match lang {
         #[cfg(feature = "python")]
-        Language::Python => {
-            let py_defs = python::load(path)
-                .map_err(ToolError::Runtime)?;
-            Ok(py_defs.into_iter().map(py_tool_to_raw).collect())
-        }
+        Language::Python => python::load(path),
         #[cfg(feature = "lua")]
         Language::Lua => Err(ToolError::Runtime(format!(
             "Lua language support not yet implemented (path: {})",
@@ -102,28 +105,4 @@ pub(crate) fn load_language(
 /// references compatible with the rest of the API.
 pub(crate) fn leak_string(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
-}
-
-// ============================================================================
-// ADAPTER CONVERSIONS
-// ============================================================================
-
-/// Convert a [`python::PyToolDef`] into a [`RawToolDef`].
-#[cfg(feature = "python")]
-fn py_tool_to_raw(d: python::PyToolDef) -> RawToolDef {
-    let func = d.func;
-    RawToolDef {
-        name: d.name,
-        description: d.description,
-        parameters: d.parameters,
-        meta: d.meta,
-        func: Box::new(move |v| {
-            let result_fut = func(v);
-            Box::pin(async move {
-                result_fut
-                    .await
-                    .map_err(|e| ToolError::Runtime(e))
-            })
-        }),
-    }
 }

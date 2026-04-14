@@ -246,6 +246,10 @@ impl<M: DeserializeOwned> ToolsBuilder<Scripted, M> {
     /// the selected language adapter.
     ///
     /// No paths configured = inventory tools only.
+    #[cfg_attr(
+        not(any(feature = "python", feature = "lua", feature = "js")),
+        allow(unreachable_code, unused_variables)
+    )]
     pub fn collect(self) -> Result<ToolCollection<M>, ToolError> {
         let lang = self
             .inner
